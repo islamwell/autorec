@@ -83,8 +83,17 @@ class AudioPlaybackServiceImpl implements AudioPlaybackService {
         },
       );
       
-      // Get duration
-      _duration = await _player!.duration;
+      // Get duration using getProgress()
+      try {
+        final progress = await _player!.getProgress();
+        if (progress != null && progress['duration'] != null) {
+          _duration = progress['duration'] as Duration;
+        } else {
+          _duration = null;
+        }
+      } catch (_) {
+        _duration = null;
+      }
       
       _setState(PlaybackState.playing);
       _startPositionUpdates();
