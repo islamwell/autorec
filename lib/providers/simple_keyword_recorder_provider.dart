@@ -66,8 +66,10 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
     this._keywordService,
     this._recordingManager,
   ) : super(const SimpleKeywordRecorderState()) {
-    // Initialize foreground service on creation
-    _foregroundService.initialize();
+    // Initialize foreground service on creation (non-blocking, errors ignored)
+    _foregroundService.initialize().catchError((error) {
+      if (kDebugMode) debugPrint('Warning: Failed to initialize foreground service: $error');
+    });
   }
 
   /// Start recording a keyword
@@ -120,58 +122,136 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
   /// Start listening for the keyword
   Future<void> startListening() async {
     try {
+      if (kDebugMode) debugPrint('=== START LISTENING ===');
+
       state = state.copyWith(
         isListening: true,
         errorMessage: null,
       );
 
-      // Start foreground service to keep app running when phone is locked
-      final serviceStarted = await _foregroundService.start();
-      if (!serviceStarted) {
-        if (kDebugMode) debugPrint('Warning: Foreground service failed to start');
+      if (kDebugMode) debugPrint('Step 1: State updated');
+
+      // Try to start foreground service (optional - don't fail if it doesn't work)
+      try {
+        if (kDebugMode) debugPrint('Step 2: Attempting to start foreground service...');
+        final serviceStarted = await _foregroundService.start().timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            if (kDebugMode) debugPrint('Foreground service start timed out');
+            return false;
+          },
+        );
+
+        if (serviceStarted) {
+          if (kDebugMode) debugPrint('Step 3: Foreground service started successfully');
+
+          // Update notification only if service started
+          try {
+            await _foregroundService.updateNotification(
+              title: 'Voice Keyword Recorder',
+              content: 'Listening for your keyword...',
+            );
+            if (kDebugMode) debugPrint('Step 4: Notification updated');
+          } catch (notifError) {
+            if (kDebugMode) debugPrint('Warning: Failed to update notification: $notifError');
+          }
+        } else {
+          if (kDebugMode) debugPrint('Step 3: Foreground service failed to start (continuing anyway)');
+        }
+      } catch (serviceError) {
+        if (kDebugMode) debugPrint('Warning: Foreground service error (continuing anyway): $serviceError');
       }
 
-      // Update notification
-      await _foregroundService.updateNotification(
-        title: 'Voice Keyword Recorder',
-        content: 'Listening for your keyword...',
-      );
-
-      // Start keyword detection
+      // Start keyword detection (this is critical)
+      if (kDebugMode) debugPrint('Step 5: Starting keyword detection service...');
       await _keywordService.startListening();
+      if (kDebugMode) debugPrint('Step 6: Keyword detection service started');
 
       // Listen for keyword detection
+      if (kDebugMode) debugPrint('Step 7: Setting up keyword detection stream listener...');
       _keywordDetectionSubscription?.cancel();
-      _keywordDetectionSubscription = _keywordService.keywordDetectedStream.listen((detected) {
-        if (detected && state.isListening && !state.isAutoRecording) {
-          _onKeywordDetected();
-        }
-      });
-    } catch (e) {
-      if (kDebugMode) debugPrint('Error starting listening: $e');
+      _keywordDetectionSubscription = _keywordService.keywordDetectedStream.listen(
+        (detected) {
+          if (kDebugMode) debugPrint('Keyword detected: $detected');
+          if (detected && state.isListening && !state.isAutoRecording) {
+            _onKeywordDetected();
+          }
+        },
+        onError: (error) {
+          if (kDebugMode) debugPrint('Error in keyword detection stream: $error');
+        },
+      );
+
+      if (kDebugMode) debugPrint('Step 8: Successfully started listening!');
+      if (kDebugMode) debugPrint('=== LISTENING STARTED ===');
+
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('!!! ERROR STARTING LISTENING !!!');
+        debugPrint('Error: $e');
+        debugPrint('Stack trace: $stackTrace');
+      }
+
       state = state.copyWith(
         isListening: false,
         errorMessage: 'Failed to start listening: ${e.toString()}',
       );
+
+      // Try to stop foreground service if it was started
+      try {
+        await _foregroundService.stop();
+      } catch (_) {
+        // Ignore errors when stopping
+      }
     }
   }
 
   /// Pause listening for the keyword
   Future<void> pauseListening() async {
     try {
-      await _keywordService.stopListening();
-      _keywordDetectionSubscription?.cancel();
+      if (kDebugMode) debugPrint('=== PAUSE LISTENING ===');
 
-      // Stop foreground service
-      await _foregroundService.stop();
+      // Stop keyword detection
+      try {
+        if (kDebugMode) debugPrint('Stopping keyword detection...');
+        await _keywordService.stopListening();
+        if (kDebugMode) debugPrint('Keyword detection stopped');
+      } catch (e) {
+        if (kDebugMode) debugPrint('Error stopping keyword service: $e');
+      }
+
+      // Cancel stream subscription
+      try {
+        _keywordDetectionSubscription?.cancel();
+        if (kDebugMode) debugPrint('Stream subscription cancelled');
+      } catch (e) {
+        if (kDebugMode) debugPrint('Error cancelling subscription: $e');
+      }
+
+      // Stop foreground service (optional - don't fail if it doesn't work)
+      try {
+        if (kDebugMode) debugPrint('Stopping foreground service...');
+        await _foregroundService.stop();
+        if (kDebugMode) debugPrint('Foreground service stopped');
+      } catch (e) {
+        if (kDebugMode) debugPrint('Warning: Failed to stop foreground service: $e');
+      }
 
       state = state.copyWith(
         isListening: false,
         errorMessage: null,
       );
-    } catch (e) {
-      if (kDebugMode) debugPrint('Error pausing listening: $e');
+
+      if (kDebugMode) debugPrint('=== LISTENING PAUSED ===');
+
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('!!! ERROR PAUSING LISTENING !!!');
+        debugPrint('Error: $e');
+        debugPrint('Stack trace: $stackTrace');
+      }
       state = state.copyWith(
+        isListening: false,
         errorMessage: 'Failed to pause listening: ${e.toString()}',
       );
     }
