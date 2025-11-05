@@ -56,8 +56,12 @@ dependencies:
   # Shared preferences for metadata storage
   shared_preferences: ^2.3.2
 
-  # Background processing
-  workmanager: ^0.5.2
+  # Background processing (using git repo for Flutter 3.x compatibility)
+  workmanager:
+    git:
+      url: https://github.com/fluttercommunity/flutter_workmanager.git
+      path: workmanager
+      ref: main
   
   # App lifecycle management
   flutter_background_service: ^5.0.10
