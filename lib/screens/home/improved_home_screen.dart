@@ -4,7 +4,6 @@ import '../../providers/recording_provider.dart';
 import '../../providers/keyword_triggered_recording_provider.dart';
 import '../../providers/keyword_training_provider.dart';
 import '../../providers/background_listening_provider.dart';
-import '../../providers/app_state_provider.dart';
 import '../../widgets/audio_level_indicator.dart';
 import '../recordings/recordings_list_screen.dart';
 import '../settings/settings_screen.dart';

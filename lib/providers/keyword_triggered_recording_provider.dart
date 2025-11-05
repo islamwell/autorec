@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/keyword_detection/keyword_detection_service.dart';
 import '../services/storage/file_storage_service.dart';
@@ -163,7 +164,7 @@ class KeywordTriggeredRecordingNotifier
       final timeSinceLastDetection =
           DateTime.now().difference(state.lastDetectionTime!);
       if (timeSinceLastDetection < _cooldownPeriod) {
-        print('Keyword detected but in cooldown period. Ignoring.');
+        debugPrint('Keyword detected but in cooldown period. Ignoring.');
         return;
       }
     }
@@ -175,7 +176,7 @@ class KeywordTriggeredRecordingNotifier
   /// Trigger automatic recording when keyword is detected
   Future<void> _triggerAutoRecording() async {
     if (state.isAutoRecording) {
-      print('Auto-recording already in progress. Ignoring new detection.');
+      debugPrint('Auto-recording already in progress. Ignoring new detection.');
       return;
     }
 
@@ -190,13 +191,13 @@ class KeywordTriggeredRecordingNotifier
       final recordingNotifier = _ref.read(recordingProvider.notifier);
       await recordingNotifier.startRecording(_autoRecordingDuration);
 
-      print('Keyword detected! Auto-recording started for $_autoRecordingDuration');
+      debugPrint('Keyword detected! Auto-recording started for $_autoRecordingDuration');
     } catch (e) {
       state = state.copyWith(
         errorMessage: 'Failed to start auto-recording: ${e.toString()}',
         isAutoRecording: false,
       );
-      print('Auto-recording failed: $e');
+      debugPrint('Auto-recording failed: $e');
     }
   }
 
@@ -221,7 +222,7 @@ class KeywordTriggeredRecordingNotifier
         errorMessage: 'Failed to stop auto-recording: ${e.toString()}',
         isAutoRecording: false,
       );
-      print('Failed to stop auto-recording: $e');
+      debugPrint('Failed to stop auto-recording: $e');
     }
   }
 
@@ -236,9 +237,9 @@ class KeywordTriggeredRecordingNotifier
       };
 
       await _storageService.saveRecording(recordingPath, metadata);
-      print('Recording metadata saved successfully');
+      debugPrint('Recording metadata saved successfully');
     } catch (e) {
-      print('Failed to save recording metadata: $e');
+      debugPrint('Failed to save recording metadata: $e');
       // Don't rethrow - metadata save failure shouldn't fail the whole operation
     }
   }
@@ -248,7 +249,7 @@ class KeywordTriggeredRecordingNotifier
     state = state.copyWith(
       errorMessage: 'Keyword detection error: ${error.toString()}',
     );
-    print('Keyword detection error: $error');
+    debugPrint('Keyword detection error: $error');
   }
 
   /// Clear error message
