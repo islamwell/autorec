@@ -59,10 +59,7 @@ dependencies:
   
   # Shared preferences for metadata storage
   shared_preferences: ^2.3.2
-  
-  # Audio format conversion and compression
-  ffmpeg_kit_flutter: ^6.0.3
-  
+
   # Background processing
   workmanager: ^0.5.2
   
