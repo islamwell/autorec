@@ -216,16 +216,31 @@ class SimpleHomeScreen extends ConsumerWidget {
                   ),
                 ),
 
-              // Recordings Count
+              // Recordings Count and View Button
               if (recorderState.recordingsCount > 0)
                 Padding(
                   padding: const EdgeInsets.only(top: 16),
-                  child: Text(
-                    '${recorderState.recordingsCount} recording${recorderState.recordingsCount == 1 ? '' : 's'} saved',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
-                    ),
-                    textAlign: TextAlign.center,
+                  child: Column(
+                    children: [
+                      Text(
+                        '${recorderState.recordingsCount} recording${recorderState.recordingsCount == 1 ? '' : 's'} saved',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurface.withOpacity(0.6),
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.pushNamed(context, '/recordings');
+                        },
+                        icon: const Icon(Icons.list),
+                        label: const Text('View Recordings'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
             ],

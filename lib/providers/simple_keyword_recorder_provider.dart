@@ -241,7 +241,7 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
           },
         );
 
-        final recordings = await _recordingManager.getAllRecordings();
+        final recordings = await _recordingManager.getRecordings();
 
         state = state.copyWith(
           isAutoRecording: false,

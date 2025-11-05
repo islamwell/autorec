@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services/service_configuration.dart';
 import 'screens/home/simple_home_screen.dart';
+import 'screens/recordings/recordings_list_screen.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
@@ -28,6 +29,9 @@ class VoiceKeywordRecorderApp extends StatelessWidget {
       theme: AppTheme.darkTheme,
       debugShowCheckedModeBanner: false,
       home: const SimpleHomeScreen(),
+      routes: {
+        '/recordings': (context) => const RecordingsListScreen(),
+      },
     );
   }
 }

@@ -69,12 +69,10 @@ class SimpleForegroundService {
         return true;
       }
 
-      final stopped = await _service.stopService();
-      if (stopped) {
-        _isRunning = false;
-        if (kDebugMode) debugPrint('Foreground service stopped successfully');
-      }
-      return stopped;
+      _service.invoke('stopService');
+      _isRunning = false;
+      if (kDebugMode) debugPrint('Foreground service stopped successfully');
+      return true;
     } catch (e) {
       if (kDebugMode) debugPrint('Error stopping foreground service: $e');
       return false;
@@ -128,11 +126,9 @@ class SimpleForegroundService {
       }
     });
 
-    // Keep service alive
-    Timer.periodic(const Duration(seconds: 10), (timer) {
-      if (!service.isRunning()) {
-        timer.cancel();
-      }
+    // Keep service alive - just log periodically
+    Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (kDebugMode) debugPrint('Background service still running...');
     });
   }
 
