@@ -10,13 +10,17 @@ import '../services/permissions/permission_service.dart';
 
 /// Provider that synchronizes state between global app state and individual providers
 /// This ensures all providers stay in sync and state changes are properly propagated
+///
+/// SOLUTION 2: DISABLED to prevent circular dependency deadlocks during initialization
+/// The circular ref.listen() calls were causing the app to hang on startup
 final stateSynchronizationProvider = Provider<void>((ref) {
-  // Watch all the individual providers and sync with global state
-  _syncPermissions(ref);
-  _syncSettings(ref);
-  _syncRecordings(ref);
-  _syncRecordingStatus(ref);
-  _syncKeywordListening(ref);
+  // DISABLED: These sync functions create circular dependencies
+  // Each provider can manage its own state independently
+  // _syncPermissions(ref);
+  // _syncSettings(ref);
+  // _syncRecordings(ref);
+  // _syncRecordingStatus(ref);
+  // _syncKeywordListening(ref);
 });
 
 /// Synchronize permission status with global app state

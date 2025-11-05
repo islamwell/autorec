@@ -59,6 +59,7 @@ class PermissionStatusNotifier extends StateNotifier<Map<AppPermission, Permissi
           for (final permission in requiredPermissions) {
             statuses[permission] ??= PermissionStatus.granted;
           }
+          return []; // Must return a value matching Future.wait's return type
         },
       );
 

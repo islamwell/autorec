@@ -3,8 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services/service_configuration.dart';
 import 'widgets/permission_wrapper.dart';
 import 'screens/home/improved_home_screen.dart';
-import 'screens/loading/app_loading_screen.dart';
-import 'providers/app_initialization_provider.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
@@ -26,21 +24,17 @@ class VoiceKeywordRecorderApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Initialize state providers
-    ref.watch(stateProvidersInitializationProvider);
-    
-    // Check if app is ready
-    final isAppReady = ref.watch(appReadyProvider);
-    
+    // SOLUTION 1: Skip complex initialization chain - just show the home screen
+    // The PermissionWrapper will handle permission checking independently
+    // This prevents hanging on complex provider dependencies
+
     return MaterialApp(
       title: 'Voice Keyword Recorder',
       theme: AppTheme.darkTheme,
       debugShowCheckedModeBanner: false,
-      home: isAppReady
-          ? const AppPermissionWrapper(
-              child: ImprovedHomeScreen(),
-            )
-          : const AppLoadingScreen(),
+      home: const AppPermissionWrapper(
+        child: ImprovedHomeScreen(),
+      ),
     );
   }
 }

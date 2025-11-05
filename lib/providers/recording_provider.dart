@@ -93,13 +93,14 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
   final NotificationService _notificationService;
   StreamSubscription<Duration>? _timerSubscription;
   StreamSubscription<void>? _timerCompleteSubscription;
-  
-  RecordingNotifier(this._audioService, this._timerService, this._notificationService) : super(const RecordingState()) {
-    _initialize();
-  }
+  bool _hasInitialized = false;
 
-  /// Initialize the recording provider
+  // SOLUTION 3: Lazy initialization - don't initialize until actually needed
+  RecordingNotifier(this._audioService, this._timerService, this._notificationService) : super(const RecordingState());
+
+  /// Initialize the recording provider (called lazily)
   Future<void> _initialize() async {
+    if (_hasInitialized) return; // Already initialized
     try {
       // Initialize notification service
       await _notificationService.initialize();
@@ -118,6 +119,7 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
       });
 
       state = state.copyWith(isInitialized: true);
+      _hasInitialized = true;
     } catch (e) {
       state = state.copyWith(
         errorMessage: 'Failed to initialize recording: ${e.toString()}',
@@ -128,6 +130,9 @@ class RecordingNotifier extends StateNotifier<RecordingState> {
   /// Start recording with optional auto-stop duration
   Future<void> startRecording([Duration? autoStopDuration]) async {
     if (state.isRecording) return;
+
+    // Initialize on first use (lazy)
+    await _initialize();
 
     try {
       state = state.copyWith(errorMessage: null);
