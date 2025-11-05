@@ -474,7 +474,7 @@ class BackgroundListeningServiceImpl implements BackgroundListeningService {
       BackgroundTasks.keywordListening,
       frequency: Duration(seconds: BackgroundConfig.keywordListeningIntervalSeconds),
       constraints: Constraints(
-        networkType: NetworkType.not_required,
+        networkType: NetworkType.notRequired,
         requiresBatteryNotLow: true,
         requiresCharging: false,
       ),
@@ -527,7 +527,7 @@ class BackgroundListeningServiceImpl implements BackgroundListeningService {
           'ios_background_keyword_check',
           'ios_background_keyword_check',
           constraints: Constraints(
-            networkType: NetworkType.not_required,
+            networkType: NetworkType.notRequired,
             requiresBatteryNotLow: true,
           ),
         );
