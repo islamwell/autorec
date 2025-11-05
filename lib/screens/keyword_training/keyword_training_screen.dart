@@ -397,21 +397,14 @@ class _KeywordTrainingScreenState extends ConsumerState<KeywordTrainingScreen> {
         if (trainingState.isRecording) ...[
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
-              onPressed: trainingState.isProcessing 
-                  ? null 
+            child: FilledButton.tonalIcon(
+              onPressed: trainingState.isProcessing
+                  ? null
                   : () => trainingNotifier.cancelRecording(),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.grey.shade600,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              child: const Text(
+              icon: const Icon(Icons.cancel_outlined),
+              label: const Text(
                 'Cancel Recording',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -422,26 +415,20 @@ class _KeywordTrainingScreenState extends ConsumerState<KeywordTrainingScreen> {
         if (trainingState.trainedProfile != null) ...[
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
+            child: FilledButton.icon(
               onPressed: () => Navigator.of(context).pop(trainingState.trainedProfile),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green.shade600,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              child: const Text(
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text(
                 'Use This Keyword',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ),
           ),
           const SizedBox(height: 8),
-          TextButton(
+          TextButton.icon(
             onPressed: () => trainingNotifier.reset(),
-            child: const Text('Train Another Keyword'),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Train Another Keyword'),
           ),
         ],
       ],
