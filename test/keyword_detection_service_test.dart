@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_keyword_recorder/services/keyword_detection/keyword_detection_service_impl.dart';
-import 'package:voice_keyword_recorder/models/keyword_profile.dart';
 
 void main() {
   group('KeywordDetectionServiceImpl', () {

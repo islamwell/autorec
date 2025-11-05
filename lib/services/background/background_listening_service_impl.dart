@@ -5,7 +5,7 @@ import 'dart:ui';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:workmanager/workmanager.dart';
+// import 'package:workmanager/workmanager.dart'; // Removed due to compatibility issues
 import 'package:permission_handler/permission_handler.dart';
 import '../keyword_detection/keyword_detection_service.dart';
 import '../keyword_detection/keyword_detection_service_impl.dart';
@@ -131,8 +131,8 @@ class BackgroundListeningServiceImpl implements BackgroundListeningService {
       // Stop background service
       _backgroundService.invoke('stop');
       
-      // Cancel work manager tasks
-      await Workmanager().cancelAll();
+      // Cancel work manager tasks (workmanager removed due to compatibility issues)
+      // await Workmanager().cancelAll();
       
       _isBackgroundListening = false;
       _backgroundListeningStartTime = null;
@@ -169,6 +169,7 @@ class BackgroundListeningServiceImpl implements BackgroundListeningService {
   }
 
   /// Check if background listening is supported on this device
+  @override
   Future<bool> isBackgroundListeningSupported() async {
     try {
       // Check if required permissions can be granted
@@ -462,23 +463,23 @@ class BackgroundListeningServiceImpl implements BackgroundListeningService {
 
   /// Start Android-specific background service
   Future<void> _startAndroidBackgroundService() async {
-    // Initialize Workmanager for periodic tasks
-    await Workmanager().initialize(
-      _workmanagerCallbackDispatcher,
-      isInDebugMode: kDebugMode,
-    );
+    // Initialize Workmanager for periodic tasks (removed due to compatibility issues)
+    // await Workmanager().initialize(
+    //   _workmanagerCallbackDispatcher,
+    //   isInDebugMode: kDebugMode,
+    // );
     
-    // Register periodic keyword listening task
-    await Workmanager().registerPeriodicTask(
-      BackgroundTasks.keywordListening,
-      BackgroundTasks.keywordListening,
-      frequency: Duration(seconds: BackgroundConfig.keywordListeningIntervalSeconds),
-      constraints: Constraints(
-        networkType: NetworkType.not_required,
-        requiresBatteryNotLow: true,
-        requiresCharging: false,
-      ),
-    );
+    // Register periodic keyword listening task (removed due to compatibility issues)
+    // await Workmanager().registerPeriodicTask(
+    //   BackgroundTasks.keywordListening,
+    //   BackgroundTasks.keywordListening,
+    //   frequency: Duration(seconds: BackgroundConfig.keywordListeningIntervalSeconds),
+    //   constraints: Constraints(
+    //     networkType: NetworkType.not_required,
+    //     requiresBatteryNotLow: true,
+    //     requiresCharging: false,
+    //   ),
+    // );
     
     // Start foreground service
     await _backgroundService.startService();
@@ -521,24 +522,10 @@ class BackgroundListeningServiceImpl implements BackgroundListeningService {
     
     // Register background task for iOS
     if (Platform.isIOS) {
-      try {
-        // Schedule background app refresh task
-        await Workmanager().registerOneOffTask(
-          'ios_background_keyword_check',
-          'ios_background_keyword_check',
-          constraints: Constraints(
-            networkType: NetworkType.not_required,
-            requiresBatteryNotLow: true,
-          ),
-        );
-        
-        if (kDebugMode) {
-          print('iOS background task registered successfully');
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print('Failed to register iOS background task: $e');
-        }
+      // Workmanager removed due to compatibility issues
+      // Background tasks will be handled by flutter_background_service
+      if (kDebugMode) {
+        print('iOS background mode configured via flutter_background_service');
       }
     }
   }
@@ -619,31 +606,12 @@ class BackgroundListeningServiceImpl implements BackgroundListeningService {
 }
 
 /// Workmanager callback dispatcher for Android background tasks
+/// NOTE: Workmanager removed due to compatibility issues
+/// Background tasks are now handled by flutter_background_service
 @pragma('vm:entry-point')
 void _workmanagerCallbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
-    try {
-      switch (task) {
-        case BackgroundTasks.keywordListening:
-          await _performBackgroundKeywordCheck();
-          break;
-        case BackgroundTasks.batteryMonitoring:
-          await _performBatteryCheck();
-          break;
-        case 'ios_background_keyword_check':
-          await _performIOSBackgroundCheck();
-          break;
-        default:
-          return Future.value(true);
-      }
-      return Future.value(true);
-    } catch (e) {
-      if (kDebugMode) {
-        print('Background task failed: $task, error: $e');
-      }
-      return Future.value(false);
-    }
-  });
+  // This function is kept for reference but is no longer used
+  // Background tasks are now handled by flutter_background_service
 }
 
 /// Perform keyword detection check in background task

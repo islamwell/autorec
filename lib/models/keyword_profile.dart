@@ -44,7 +44,7 @@ class KeywordProfile {
     if (confidence < 0.0 || confidence > 1.0) return false;
     
     // Keyword should be reasonable length (1-50 characters)
-    if (keyword.length < 1 || keyword.length > 50) return false;
+    if (keyword.isEmpty || keyword.length > 50) return false;
     
     return true;
   }

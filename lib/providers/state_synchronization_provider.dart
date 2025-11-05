@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
 import 'app_state_provider.dart';
 import 'settings_provider.dart';
 import 'recordings_provider.dart';
@@ -7,6 +8,8 @@ import 'permission_provider.dart';
 import 'background_listening_provider.dart';
 
 import '../services/permissions/permission_service.dart';
+import '../services/keyword_detection/keyword_detection_service.dart';
+import '../services/service_locator.dart';
 
 /// Provider that synchronizes state between global app state and individual providers
 /// This ensures all providers stay in sync and state changes are properly propagated
@@ -17,6 +20,7 @@ final stateSynchronizationProvider = Provider<void>((ref) {
   _syncRecordings(ref);
   _syncRecordingStatus(ref);
   _syncKeywordListening(ref);
+  _syncKeywordDetection(ref);
 });
 
 /// Synchronize permission status with global app state
@@ -109,6 +113,52 @@ void _syncKeywordListening(Ref ref) {
   );
 }
 
+/// Synchronize keyword detection with recording
+/// This listens to the keyword detection service and automatically starts recording
+void _syncKeywordDetection(Ref ref) {
+  final keywordService = ref.read(keywordDetectionServiceProvider);
+  final settings = ref.watch(settingsProvider).settings;
+  
+  // Only set up keyword detection if it's enabled in settings
+  if (!settings.keywordListeningEnabled) {
+    return;
+  }
+  
+  // Listen to keyword detection stream
+  StreamSubscription<bool>? subscription;
+  
+  ref.onDispose(() {
+    subscription?.cancel();
+  });
+  
+  subscription = keywordService.keywordDetectedStream.listen((detected) {
+    if (detected) {
+      _handleKeywordDetected(ref);
+    }
+  });
+}
+
+/// Handle keyword detection by starting recording
+void _handleKeywordDetected(Ref ref) {
+  final recordingState = ref.read(recordingProvider);
+  final settings = ref.read(settingsProvider).settings;
+  
+  // Only start recording if not already recording and keyword listening is enabled
+  if (!recordingState.isRecording && settings.keywordListeningEnabled) {
+    Future.microtask(() async {
+      try {
+        final recordingNotifier = ref.read(recordingProvider.notifier);
+        
+        // Start recording with auto-stop timer from settings
+        await recordingNotifier.startRecording(settings.autoStopDuration);
+      } catch (e) {
+        final appStateNotifier = ref.read(appStateProvider.notifier);
+        appStateNotifier.setError('Failed to start recording on keyword detection: ${e.toString()}');
+      }
+    });
+  }
+}
+
 /// Provider that watches for global app state changes and propagates them to individual providers
 /// This ensures that when global state is restored, individual providers are updated
 final stateRestorationProvider = Provider<void>((ref) {
@@ -117,28 +167,8 @@ final stateRestorationProvider = Provider<void>((ref) {
   // Only restore state after initialization
   if (!appState.isInitialized) return;
   
-  // Restore settings if they differ from current provider state
-  final currentSettings = ref.read(settingsProvider).settings;
-  if (currentSettings != appState.settings) {
-    Future.microtask(() {
-      final settingsNotifier = ref.read(settingsProvider.notifier);
-      // Update settings without triggering persistence (to avoid loops)
-      settingsNotifier.state = settingsNotifier.state.copyWith(
-        settings: appState.settings,
-      );
-    });
-  }
-  
-  // Restore recordings if they differ from current provider state
-  final currentRecordings = ref.read(recordingsProvider).recordings;
-  if (currentRecordings.length != appState.recordings.length) {
-    Future.microtask(() {
-      final recordingsNotifier = ref.read(recordingsProvider.notifier);
-      recordingsNotifier.state = recordingsNotifier.state.copyWith(
-        recordings: appState.recordings,
-      );
-    });
-  }
+  // Note: State restoration is handled by individual providers loading their own state
+  // This provider just ensures the app state is watched and available
 });
 
 /// Provider that manages error state across the application

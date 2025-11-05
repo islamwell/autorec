@@ -83,8 +83,14 @@ class AudioPlaybackServiceImpl implements AudioPlaybackService {
         },
       );
       
-      // Get duration
-      _duration = await _player!.duration;
+      // Get duration - flutter_sound API changed, duration is now available through getProgress
+      try {
+        final progress = await _player!.getProgress();
+        _duration = progress['duration'] as Duration?;
+      } catch (e) {
+        // If duration is not available, set to null
+        _duration = null;
+      }
       
       _setState(PlaybackState.playing);
       _startPositionUpdates();
@@ -212,7 +218,7 @@ class AudioPlaybackServiceImpl implements AudioPlaybackService {
       if (_player != null && _state == PlaybackState.playing) {
         try {
           final currentPosition = await _player!.getProgress();
-          if (currentPosition != null && currentPosition['position'] != null) {
+          if (currentPosition['position'] != null) {
             _position = currentPosition['position'] as Duration;
             _positionController.add(_position);
           }

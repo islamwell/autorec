@@ -111,7 +111,7 @@ class RecordingsNotifier extends StateNotifier<RecordingsState> {
       
       if (deletedCount < ids.length) {
         state = state.copyWith(
-          error: 'Some recordings could not be deleted (${deletedCount}/${ids.length} deleted)',
+          error: 'Some recordings could not be deleted ($deletedCount/${ids.length} deleted)',
         );
       }
     } catch (e) {

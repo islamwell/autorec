@@ -270,7 +270,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           gradient: LinearGradient(
             colors: [
               Theme.of(context).colorScheme.surface,
-              Theme.of(context).colorScheme.surfaceVariant,
+              Theme.of(context).colorScheme.surfaceContainerHighest,
             ],
           ),
         ),
@@ -565,7 +565,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         gradient: LinearGradient(
           colors: [
             Theme.of(context).colorScheme.surface,
-            Theme.of(context).colorScheme.surfaceVariant,
+            Theme.of(context).colorScheme.surfaceContainerHighest,
           ],
         ),
         boxShadow: [

@@ -77,7 +77,7 @@ class _RecordingDetailsScreenState extends ConsumerState<RecordingDetailsScreen>
           gradient: LinearGradient(
             colors: [
               theme.colorScheme.surface,
-              theme.colorScheme.surfaceVariant,
+              theme.colorScheme.surfaceContainerHighest,
             ],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -120,7 +120,7 @@ class _RecordingDetailsScreenState extends ConsumerState<RecordingDetailsScreen>
           gradient: LinearGradient(
             colors: [
               theme.colorScheme.surface,
-              theme.colorScheme.surfaceVariant,
+              theme.colorScheme.surfaceContainerHighest,
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -387,7 +387,7 @@ class _RecordingDetailsScreenState extends ConsumerState<RecordingDetailsScreen>
           borderRadius: BorderRadius.circular(16),
           gradient: LinearGradient(
             colors: [
-              theme.colorScheme.surfaceVariant,
+              theme.colorScheme.surfaceContainerHighest,
               theme.colorScheme.surface,
             ],
             begin: Alignment.topLeft,

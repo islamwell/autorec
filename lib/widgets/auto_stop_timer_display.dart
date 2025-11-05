@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'dart:ui';
 import '../providers/recording_provider.dart';
 
 /// Widget that displays the auto-stop timer during recording

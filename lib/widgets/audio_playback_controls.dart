@@ -180,7 +180,7 @@ class _AudioPlaybackControlsState extends ConsumerState<AudioPlaybackControls> {
         gradient: LinearGradient(
           colors: [
             theme.colorScheme.surface,
-            theme.colorScheme.surfaceVariant,
+            theme.colorScheme.surfaceContainerHighest,
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,

@@ -48,14 +48,14 @@ class GradientContainer extends StatelessWidget {
   final EdgeInsetsGeometry? margin;
 
   const GradientContainer({
-    Key? key,
+    super.key,
     required this.child,
     this.gradient,
     this.borderRadius = 16,
     this.elevation = 8,
     this.padding,
     this.margin,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -90,14 +90,14 @@ class GradientElevatedButton extends StatelessWidget {
   final double elevation;
 
   const GradientElevatedButton({
-    Key? key,
+    super.key,
     required this.onPressed,
     required this.child,
     this.gradient,
     this.borderRadius = 24,
     this.padding,
     this.elevation = 8,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -144,13 +144,13 @@ class GradientCircularButton extends StatelessWidget {
   final double elevation;
 
   const GradientCircularButton({
-    Key? key,
+    super.key,
     required this.onPressed,
     required this.child,
     this.gradient,
     this.size = 80,
     this.elevation = 8,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -192,7 +192,7 @@ class GradientCard extends StatelessWidget {
   final VoidCallback? onTap;
 
   const GradientCard({
-    Key? key,
+    super.key,
     required this.child,
     this.gradient,
     this.borderRadius = 16,
@@ -200,7 +200,7 @@ class GradientCard extends StatelessWidget {
     this.padding,
     this.margin,
     this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -242,13 +242,13 @@ class GradientProgressBar extends StatelessWidget {
   final double borderRadius;
 
   const GradientProgressBar({
-    Key? key,
+    super.key,
     required this.value,
     this.gradient,
     this.backgroundColor,
     this.height = 8,
     this.borderRadius = 4,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -281,13 +281,13 @@ class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
   final double elevation;
 
   const GradientAppBar({
-    Key? key,
+    super.key,
     required this.title,
     this.gradient,
     this.actions,
     this.leading,
     this.elevation = 8,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -333,13 +333,13 @@ class GradientBottomNavigationBar extends StatelessWidget {
   final double elevation;
 
   const GradientBottomNavigationBar({
-    Key? key,
+    super.key,
     required this.currentIndex,
     required this.onTap,
     required this.items,
     this.gradient,
     this.elevation = 8,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

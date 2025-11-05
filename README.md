@@ -1,4 +1,4 @@
-# Voice Keyword Recorder
+# Voice Keyword Recorder kiro
 
 A cross-platform mobile application (iOS and Android) that provides intelligent voice recording capabilities optimized for human speech. The app features keyword-triggered automatic recording, customizable auto-stop functionality, and comprehensive playback controls with sharing capabilities.
 

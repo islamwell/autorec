@@ -61,10 +61,10 @@ dependencies:
   shared_preferences: ^2.3.2
   
   # Audio format conversion and compression
-  ffmpeg_kit_flutter: ^6.0.3
+  # ffmpeg_kit_flutter: ^6.0.3  # Temporarily disabled due to dependency issues
   
   # Background processing
-  workmanager: ^0.5.2
+  # workmanager: ^0.5.2  # Temporarily disabled due to compatibility issues
   
   # App lifecycle management
   flutter_background_service: ^5.0.10

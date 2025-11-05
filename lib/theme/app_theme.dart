@@ -25,7 +25,7 @@ class AppTheme {
         secondary: Color(0xFF4A148C),
         tertiary: Color(0xFFE65100),
         surface: Color(0xFF1E1E1E),
-        surfaceVariant: Color(0xFF121212),
+        surfaceContainerHighest: Color(0xFF121212),
         error: Color(0xFFC62828),
       ),
       textTheme: const TextTheme(
@@ -77,7 +77,7 @@ class AppTheme {
         secondary: Color(0xFF4A148C),
         tertiary: Color(0xFFE65100),
         surface: Color(0xFFFAFAFA),
-        surfaceVariant: Color(0xFFF5F5F5),
+        surfaceContainerHighest: Color(0xFFF5F5F5),
         error: Color(0xFFC62828),
       ),
       textTheme: const TextTheme(

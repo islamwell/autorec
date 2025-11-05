@@ -1,8 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/permissions/permission_service.dart';
 import '../../services/service_locator.dart';
-import '../../providers/permission_provider.dart';
 
 /// Screen that handles permission requests with explanatory content
 class PermissionRequestScreen extends ConsumerStatefulWidget {
@@ -28,25 +28,62 @@ class _PermissionRequestScreenState extends ConsumerState<PermissionRequestScree
   @override
   void initState() {
     super.initState();
-    _checkCurrentPermissions();
+    // Check permissions after the first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkCurrentPermissions();
+    });
   }
 
   Future<void> _checkCurrentPermissions() async {
-    final permissionService = ref.read(permissionServiceProvider);
-    final statuses = <AppPermission, PermissionStatus>{};
+    if (!mounted) return;
     
-    for (final permission in widget.requiredPermissions) {
-      try {
-        statuses[permission] = await permissionService.checkPermission(permission);
-      } catch (e) {
-        statuses[permission] = PermissionStatus.denied;
+    try {
+      final permissionService = ref.read(permissionServiceProvider);
+      final statuses = <AppPermission, PermissionStatus>{};
+      
+      for (final permission in widget.requiredPermissions) {
+        try {
+          // Add timeout to prevent hanging
+          final status = await permissionService.checkPermission(permission).timeout(
+            const Duration(seconds: 2),
+            onTimeout: () => PermissionStatus.denied,
+          );
+          statuses[permission] = status;
+        } catch (e) {
+          statuses[permission] = PermissionStatus.denied;
+        }
       }
-    }
-    
-    if (mounted) {
-      setState(() {
-        _permissionStatuses = statuses;
-      });
+      
+      if (mounted) {
+        setState(() {
+          _permissionStatuses = statuses;
+        });
+        
+        // Check if all permissions are already granted
+        final allGranted = statuses.values.every(
+          (status) => status == PermissionStatus.granted,
+        );
+        
+        if (allGranted) {
+          // All permissions already granted, notify parent immediately
+          Future.microtask(() {
+            if (mounted) {
+              widget.onPermissionsGranted?.call();
+            }
+          });
+        }
+      }
+    } catch (e) {
+      // On error, assume all permissions are denied
+      if (mounted) {
+        setState(() {
+          _permissionStatuses = Map.fromEntries(
+            widget.requiredPermissions.map(
+              (p) => MapEntry(p, PermissionStatus.denied),
+            ),
+          );
+        });
+      }
     }
   }
 
@@ -73,11 +110,16 @@ class _PermissionRequestScreenState extends ConsumerState<PermissionRequestScree
         (status) => status == PermissionStatus.granted,
       );
       
-      if (allGranted) {
-        widget.onPermissionsGranted?.call();
-      } else {
-        widget.onPermissionsDenied?.call();
-      }
+      // Use Future.microtask to ensure callback happens after setState
+      Future.microtask(() {
+        if (mounted) {
+          if (allGranted) {
+            widget.onPermissionsGranted?.call();
+          } else {
+            widget.onPermissionsDenied?.call();
+          }
+        }
+      });
     } catch (e) {
       setState(() {
         _isRequesting = false;
@@ -372,8 +414,8 @@ class _PermissionRequestScreenState extends ConsumerState<PermissionRequestScree
               ),
               elevation: 8,
             ).copyWith(
-              backgroundColor: MaterialStateProperty.resolveWith((states) {
-                if (states.contains(MaterialState.disabled)) {
+              backgroundColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.disabled)) {
                   return theme.colorScheme.onSurface.withOpacity(0.12);
                 }
                 return null;

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:voice_keyword_recorder/models/recording.dart';
-import 'package:voice_keyword_recorder/providers/recordings_provider.dart';
 import 'package:voice_keyword_recorder/widgets/recording_list_item.dart';
 import 'package:voice_keyword_recorder/screens/recordings/recordings_list_screen.dart';
 import 'package:voice_keyword_recorder/services/storage/recording_manager_service.dart';

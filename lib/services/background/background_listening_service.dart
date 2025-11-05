@@ -1,10 +1,4 @@
 import 'dart:async';
-import 'dart:io';
-import 'package:battery_plus/battery_plus.dart';
-import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:workmanager/workmanager.dart';
-import '../keyword_detection/keyword_detection_service.dart';
-import '../service_locator.dart';
 import '../../models/app_settings.dart';
 
 /// Service for managing background keyword listening with platform-specific optimizations

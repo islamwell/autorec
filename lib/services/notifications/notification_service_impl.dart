@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'notification_service.dart';
 
@@ -102,7 +103,7 @@ class NotificationServiceImpl implements NotificationService {
         importance: Importance.high,
         priority: Priority.high,
         icon: '@mipmap/ic_launcher',
-        color: const Color(0xFF1A237E),
+        color: Color(0xFF1A237E),
         showWhen: true,
       );
 
@@ -112,7 +113,7 @@ class NotificationServiceImpl implements NotificationService {
         presentSound: true,
       );
 
-      const notificationDetails = NotificationDetails(
+      final notificationDetails = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
       );
@@ -145,7 +146,7 @@ class NotificationServiceImpl implements NotificationService {
         importance: Importance.low,
         priority: Priority.low,
         icon: '@mipmap/ic_launcher',
-        color: const Color(0xFF1A237E),
+        color: Color(0xFF1A237E),
         ongoing: true,
         showWhen: true,
       );
@@ -156,7 +157,7 @@ class NotificationServiceImpl implements NotificationService {
         presentSound: false,
       );
 
-      const notificationDetails = NotificationDetails(
+      final notificationDetails = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
       );
@@ -192,7 +193,7 @@ class NotificationServiceImpl implements NotificationService {
         importance: Importance.defaultImportance,
         priority: Priority.defaultPriority,
         icon: '@mipmap/ic_launcher',
-        color: const Color(0xFF1A237E),
+        color: Color(0xFF1A237E),
         showWhen: true,
       );
 
@@ -202,7 +203,7 @@ class NotificationServiceImpl implements NotificationService {
         presentSound: true,
       );
 
-      const notificationDetails = NotificationDetails(
+      final notificationDetails = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
       );

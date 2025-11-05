@@ -352,7 +352,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             // Quality options
             ...AudioQuality.values.map((quality) {
               return _buildQualityOption(context, quality, settings.recordingQuality == quality);
-            }).toList(),
+            }),
           ],
         ),
       ),

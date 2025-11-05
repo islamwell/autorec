@@ -93,7 +93,7 @@ class _RecordingsListScreenState extends ConsumerState<RecordingsListScreen> {
           gradient: LinearGradient(
             colors: [
               theme.colorScheme.surface,
-              theme.colorScheme.surfaceVariant,
+              theme.colorScheme.surfaceContainerHighest,
             ],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -218,7 +218,7 @@ class _RecordingsListScreenState extends ConsumerState<RecordingsListScreen> {
                 borderSide: BorderSide.none,
               ),
               filled: true,
-              fillColor: theme.colorScheme.surfaceVariant,
+              fillColor: theme.colorScheme.surfaceContainerHighest,
             ),
           ),
           

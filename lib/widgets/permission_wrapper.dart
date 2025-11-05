@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/permissions/permission_service.dart';
 import '../providers/permission_provider.dart';
+import '../services/service_locator.dart';
 import '../screens/permissions/permission_request_screen.dart';
 import '../screens/permissions/permission_denied_screen.dart';
 
@@ -45,57 +47,18 @@ class _PermissionWrapperState extends ConsumerState<PermissionWrapper> {
   Future<void> _checkPermissions() async {
     if (!mounted) return;
 
-    setState(() {
-      _isCheckingPermissions = true;
-    });
-
-    try {
-      final permissionNotifier = ref.read(permissionStatusProvider.notifier);
-      await permissionNotifier.refreshPermissions();
+    // Just show permission request screen immediately
+    // The permission request screen will check and request permissions
+    if (mounted) {
+      setState(() {
+        _isCheckingPermissions = false;
+        _hasRequiredPermissions = false;
+        _deniedPermissions = widget.requiredPermissions;
+        _showPermissionRequest = widget.showPermissionScreens;
+        _showPermissionDenied = false;
+      });
       
-      final permissionStatuses = ref.read(permissionStatusProvider);
-      final deniedPermissions = <AppPermission>[];
-      bool allGranted = true;
-
-      for (final permission in widget.requiredPermissions) {
-        final status = permissionStatuses[permission] ?? PermissionStatus.denied;
-        if (status != PermissionStatus.granted) {
-          allGranted = false;
-          deniedPermissions.add(permission);
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _hasRequiredPermissions = allGranted;
-          _deniedPermissions = deniedPermissions;
-          _isCheckingPermissions = false;
-          
-          if (!allGranted && widget.showPermissionScreens) {
-            _showPermissionRequest = true;
-          }
-        });
-
-        if (allGranted) {
-          widget.onPermissionsGranted?.call();
-        } else {
-          widget.onPermissionsDenied?.call();
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _hasRequiredPermissions = false;
-          _isCheckingPermissions = false;
-          _deniedPermissions = widget.requiredPermissions;
-          
-          if (widget.showPermissionScreens) {
-            _showPermissionRequest = true;
-          }
-        });
-        
-        widget.onPermissionsDenied?.call();
-      }
+      widget.onPermissionsDenied?.call();
     }
   }
 
@@ -133,11 +96,11 @@ class _PermissionWrapperState extends ConsumerState<PermissionWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    // Listen to permission status changes
+    // Listen to permission status changes (but don't trigger re-check during initial check)
     ref.listen<Map<AppPermission, PermissionStatus>>(
       permissionStatusProvider,
       (previous, next) {
-        if (previous != next) {
+        if (previous != null && previous != next && !_isCheckingPermissions) {
           _checkPermissions();
         }
       },
