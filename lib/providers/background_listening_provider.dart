@@ -61,13 +61,15 @@ class BackgroundListeningState {
 /// Provider for managing background listening state and operations
 class BackgroundListeningNotifier extends StateNotifier<BackgroundListeningState> {
   final BackgroundListeningService _backgroundService;
-  
-  BackgroundListeningNotifier(this._backgroundService) : super(const BackgroundListeningState()) {
-    _initialize();
-  }
+  bool _hasInitialized = false;
 
-  /// Initialize the background listening provider
+  // SOLUTION 3: Lazy initialization - don't initialize until actually needed
+  BackgroundListeningNotifier(this._backgroundService) : super(const BackgroundListeningState());
+
+  /// Initialize the background listening provider (called lazily)
   Future<void> _initialize() async {
+    if (_hasInitialized) return; // Already initialized
+
     try {
       // Listen to battery level changes
       _backgroundService.batteryLevelStream.listen((level) {
@@ -80,6 +82,7 @@ class BackgroundListeningNotifier extends StateNotifier<BackgroundListeningState
       });
 
       state = state.copyWith(isInitialized: true);
+      _hasInitialized = true;
     } catch (e) {
       state = state.copyWith(
         errorMessage: 'Failed to initialize background listening: ${e.toString()}',
@@ -91,11 +94,14 @@ class BackgroundListeningNotifier extends StateNotifier<BackgroundListeningState
   Future<void> startBackgroundListening() async {
     if (state.isListening) return;
 
+    // Initialize on first use (lazy)
+    await _initialize();
+
     try {
       state = state.copyWith(errorMessage: null);
-      
+
       await _backgroundService.startBackgroundListening();
-      
+
       state = state.copyWith(isListening: true);
     } catch (e) {
       state = state.copyWith(

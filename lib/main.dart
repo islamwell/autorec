@@ -26,21 +26,17 @@ class VoiceKeywordRecorderApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Initialize state providers
-    ref.watch(stateProvidersInitializationProvider);
-    
-    // Check if app is ready
-    final isAppReady = ref.watch(appReadyProvider);
-    
+    // SOLUTION 1: Skip complex initialization chain - just show the home screen
+    // The PermissionWrapper will handle permission checking independently
+    // This prevents hanging on complex provider dependencies
+
     return MaterialApp(
       title: 'Voice Keyword Recorder',
       theme: AppTheme.darkTheme,
       debugShowCheckedModeBanner: false,
-      home: isAppReady
-          ? const AppPermissionWrapper(
-              child: ImprovedHomeScreen(),
-            )
-          : const AppLoadingScreen(),
+      home: const AppPermissionWrapper(
+        child: ImprovedHomeScreen(),
+      ),
     );
   }
 }
