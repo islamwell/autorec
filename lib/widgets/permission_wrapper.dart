@@ -51,8 +51,17 @@ class _PermissionWrapperState extends ConsumerState<PermissionWrapper> {
 
     try {
       final permissionNotifier = ref.read(permissionStatusProvider.notifier);
-      await permissionNotifier.refreshPermissions();
-      
+
+      // Add timeout to prevent hanging indefinitely
+      await permissionNotifier.refreshPermissions().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          // If timeout, assume permissions are granted to allow app to start
+          // User can grant permissions later through the app
+          debugPrint('Permission check timed out - allowing app to start');
+        },
+      );
+
       final permissionStatuses = ref.read(permissionStatusProvider);
       final deniedPermissions = <AppPermission>[];
       bool allGranted = true;
@@ -70,7 +79,7 @@ class _PermissionWrapperState extends ConsumerState<PermissionWrapper> {
           _hasRequiredPermissions = allGranted;
           _deniedPermissions = deniedPermissions;
           _isCheckingPermissions = false;
-          
+
           if (!allGranted && widget.showPermissionScreens) {
             _showPermissionRequest = true;
           }
@@ -88,12 +97,12 @@ class _PermissionWrapperState extends ConsumerState<PermissionWrapper> {
           _hasRequiredPermissions = false;
           _isCheckingPermissions = false;
           _deniedPermissions = widget.requiredPermissions;
-          
+
           if (widget.showPermissionScreens) {
             _showPermissionRequest = true;
           }
         });
-        
+
         widget.onPermissionsDenied?.call();
       }
     }
