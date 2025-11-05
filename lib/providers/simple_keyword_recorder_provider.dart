@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/audio_recording/audio_recording_service.dart';
+import '../services/audio/audio_recording_service.dart';
 import '../services/keyword_detection/keyword_detection_service.dart';
-import '../services/recording_manager/recording_manager_service.dart';
+import '../services/storage/recording_manager_service.dart';
+import '../services/background/simple_foreground_service.dart';
 import '../services/service_locator.dart';
 
 /// Simple state for keyword recorder
@@ -52,6 +53,7 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
   final AudioRecordingService _audioService;
   final KeywordDetectionService _keywordService;
   final RecordingManagerService _recordingManager;
+  final SimpleForegroundService _foregroundService = SimpleForegroundService();
 
   Timer? _autoStopTimer;
   Timer? _countdownTimer;
@@ -63,7 +65,10 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
     this._audioService,
     this._keywordService,
     this._recordingManager,
-  ) : super(const SimpleKeywordRecorderState());
+  ) : super(const SimpleKeywordRecorderState()) {
+    // Initialize foreground service on creation
+    _foregroundService.initialize();
+  }
 
   /// Start recording a keyword
   Future<void> startKeywordRecording() async {
@@ -120,6 +125,18 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
         errorMessage: null,
       );
 
+      // Start foreground service to keep app running when phone is locked
+      final serviceStarted = await _foregroundService.start();
+      if (!serviceStarted) {
+        if (kDebugMode) debugPrint('Warning: Foreground service failed to start');
+      }
+
+      // Update notification
+      await _foregroundService.updateNotification(
+        title: 'Voice Keyword Recorder',
+        content: 'Listening for your keyword...',
+      );
+
       // Start keyword detection
       await _keywordService.startListening();
 
@@ -145,6 +162,9 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
       await _keywordService.stopListening();
       _keywordDetectionSubscription?.cancel();
 
+      // Stop foreground service
+      await _foregroundService.stop();
+
       state = state.copyWith(
         isListening: false,
         errorMessage: null,
@@ -166,6 +186,12 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
         isAutoRecording: true,
         recordingTimeRemaining: _autoRecordingDuration,
         errorMessage: null,
+      );
+
+      // Update notification to show recording status
+      await _foregroundService.updateNotification(
+        title: 'Voice Keyword Recorder',
+        content: 'Recording (10 min)...',
       );
 
       // Start recording
@@ -206,9 +232,13 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
 
       if (audioPath != null) {
         // Save the recording
-        await _recordingManager.saveRecording(
+        await _recordingManager.createRecording(
           audioPath,
-          'Auto-recorded at ${DateTime.now().toString()}',
+          {
+            'title': 'Auto-recorded',
+            'description': 'Triggered by keyword at ${DateTime.now().toString()}',
+            'isKeywordTriggered': true,
+          },
         );
 
         final recordings = await _recordingManager.getAllRecordings();
@@ -219,6 +249,14 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
           recordingTimeRemaining: null,
           errorMessage: null,
         );
+
+        // Update notification back to listening status
+        if (state.isListening) {
+          await _foregroundService.updateNotification(
+            title: 'Voice Keyword Recorder',
+            content: 'Listening for your keyword...',
+          );
+        }
 
         if (kDebugMode) debugPrint('Auto-recording saved successfully');
       } else {
@@ -243,6 +281,7 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
     _autoStopTimer?.cancel();
     _countdownTimer?.cancel();
     _keywordDetectionSubscription?.cancel();
+    _foregroundService.stop();
     super.dispose();
   }
 }
