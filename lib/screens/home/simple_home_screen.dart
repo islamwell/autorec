@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/simple_keyword_recorder_provider.dart';
+import '../../providers/simple_permission_provider.dart';
 
 /// Simple home screen with Material Design 3
 /// Shows two main buttons: Record Keyword and Pause/Resume Listening
@@ -11,7 +12,16 @@ class SimpleHomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final recorderState = ref.watch(simpleKeywordRecorderProvider);
     final recorderNotifier = ref.read(simpleKeywordRecorderProvider.notifier);
+    final permissionAsync = ref.watch(hasMicrophonePermissionProvider);
+    final requestPermission = ref.read(requestMicrophonePermissionProvider);
     final theme = Theme.of(context);
+
+    // Check if we have microphone permission
+    final hasPermission = permissionAsync.when(
+      data: (has) => has,
+      loading: () => false,
+      error: (_, __) => false,
+    );
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
@@ -126,7 +136,22 @@ class SimpleHomeScreen extends ConsumerWidget {
                 color: theme.colorScheme.primary,
                 onPressed: recorderState.isRecordingKeyword
                     ? () => recorderNotifier.stopKeywordRecording()
-                    : () => recorderNotifier.startKeywordRecording(),
+                    : () async {
+                        if (!hasPermission) {
+                          final granted = await requestPermission();
+                          if (!granted) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Microphone permission is required to record'),
+                                ),
+                              );
+                            }
+                            return;
+                          }
+                        }
+                        recorderNotifier.startKeywordRecording();
+                      },
                 enabled: !recorderState.isAutoRecording,
               ),
 
@@ -143,8 +168,23 @@ class SimpleHomeScreen extends ConsumerWidget {
                     : theme.colorScheme.tertiary,
                 onPressed: recorderState.isListening
                     ? () => recorderNotifier.pauseListening()
-                    : () => recorderNotifier.startListening(),
-                enabled: recorderState.hasKeyword && !recorderState.isRecordingKeyword,
+                    : () async {
+                        if (!hasPermission) {
+                          final granted = await requestPermission();
+                          if (!granted) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Microphone permission is required to listen'),
+                                ),
+                              );
+                            }
+                            return;
+                          }
+                        }
+                        recorderNotifier.startListening();
+                      },
+                enabled: recorderState.hasKeyword && !recorderState.isRecordingKeyword && hasPermission,
               ),
 
               const SizedBox(height: 32),

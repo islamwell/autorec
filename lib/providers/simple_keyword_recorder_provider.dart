@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/audio_recording/audio_recording_service.dart';
+import '../services/audio/audio_recording_service.dart';
 import '../services/keyword_detection/keyword_detection_service.dart';
-import '../services/recording_manager/recording_manager_service.dart';
+import '../services/storage/recording_manager_service.dart';
 import '../services/service_locator.dart';
 
 /// Simple state for keyword recorder
@@ -206,9 +206,13 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
 
       if (audioPath != null) {
         // Save the recording
-        await _recordingManager.saveRecording(
+        await _recordingManager.createRecording(
           audioPath,
-          'Auto-recorded at ${DateTime.now().toString()}',
+          {
+            'title': 'Auto-recorded',
+            'description': 'Triggered by keyword at ${DateTime.now().toString()}',
+            'isKeywordTriggered': true,
+          },
         );
 
         final recordings = await _recordingManager.getAllRecordings();
