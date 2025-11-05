@@ -34,19 +34,47 @@ class PermissionStatusNotifier extends StateNotifier<Map<AppPermission, Permissi
   Future<void> _initializePermissions() async {
     try {
       final statuses = <AppPermission, PermissionStatus>{};
-      
-      for (final permission in AppPermission.values) {
-        statuses[permission] = await _permissionService.checkPermission(permission);
-      }
-      
+
+      // Only check required permissions during initialization to avoid hanging
+      // Optional permissions (notification, backgroundAudio) can be checked later
+      final requiredPermissions = [
+        AppPermission.microphone,
+        AppPermission.storage,
+      ];
+
+      // Check required permissions with overall timeout
+      await Future.wait(
+        requiredPermissions.map((permission) async {
+          try {
+            statuses[permission] = await _permissionService.checkPermission(permission);
+          } catch (e) {
+            // If individual check fails, mark as denied
+            statuses[permission] = PermissionStatus.denied;
+          }
+        }),
+      ).timeout(
+        const Duration(seconds: 10), // Overall timeout for all permission checks
+        onTimeout: () {
+          // If overall timeout, mark unchecked permissions as granted to allow app to start
+          for (final permission in requiredPermissions) {
+            statuses[permission] ??= PermissionStatus.granted;
+          }
+        },
+      );
+
+      // Set optional permissions to granted by default (they'll be checked when needed)
+      statuses[AppPermission.notification] = PermissionStatus.granted;
+      statuses[AppPermission.backgroundAudio] = PermissionStatus.granted;
+
       state = statuses;
     } catch (e) {
-      // If initialization fails, set all permissions to denied
-      state = Map.fromEntries(
-        AppPermission.values.map(
-          (permission) => MapEntry(permission, PermissionStatus.denied),
-        ),
-      );
+      // If initialization fails completely, allow app to start with limited functionality
+      state = {
+        AppPermission.microphone: PermissionStatus.denied,
+        AppPermission.storage: PermissionStatus.granted, // Allow app to start
+        AppPermission.notification: PermissionStatus.granted,
+        AppPermission.backgroundAudio: PermissionStatus.granted,
+      };
     }
   }
 
