@@ -245,13 +245,16 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
       if (audioPath != null) {
         if (kDebugMode) debugPrint('🧪 [MANUAL] Recording stopped. Saving...');
 
-        // Save the recording
+        final duration = _autoRecordingDuration - (state.recordingTimeRemaining ?? Duration.zero);
+
+        // Save the recording with proper metadata format
         await _recordingManager.createRecording(
           audioPath,
           {
-            'title': 'Manual Test Recording',
-            'description': 'Manual recording created at ${DateTime.now().toString()}',
-            'isManual': true,
+            'keyword': 'Manual Test',
+            'duration': duration.inMilliseconds,
+            'quality': 'high',
+            'compress': false, // Save as original format for testing
           },
         );
 
@@ -354,13 +357,16 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
       if (audioPath != null) {
         if (kDebugMode) debugPrint('Recording stopped. Saving recording...');
 
-        // Save the recording
+        final duration = _autoRecordingDuration - (state.recordingTimeRemaining ?? Duration.zero);
+
+        // Save the recording with proper metadata format
         await _recordingManager.createRecording(
           audioPath,
           {
-            'title': 'Auto-recorded',
-            'description': 'Triggered by keyword at ${DateTime.now().toString()}',
-            'isKeywordTriggered': true,
+            'keyword': 'Keyword Triggered',
+            'duration': duration.inMilliseconds,
+            'quality': 'high',
+            'compress': true, // Compress auto-recordings to save space
           },
         );
 
