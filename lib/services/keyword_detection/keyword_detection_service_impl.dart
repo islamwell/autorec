@@ -77,18 +77,30 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
   @override
   Future<KeywordProfile> trainKeyword(String audioPath) async {
     try {
+      if (kDebugMode) debugPrint('🎓 [KW-TRAIN] Starting keyword training...');
+      if (kDebugMode) debugPrint('🎓 [KW-TRAIN] Audio path: $audioPath');
+
       // Validate audio file exists
       final audioFile = File(audioPath);
       if (!await audioFile.exists()) {
         throw KeywordDetectionException('Audio file not found: $audioPath');
       }
 
+      final fileSize = await audioFile.length();
+      if (kDebugMode) debugPrint('🎓 [KW-TRAIN] File size: ${fileSize} bytes');
+
       // Extract audio pattern from the training file
       final pattern = await _extractAudioPattern(audioPath);
-      
+
+      if (kDebugMode) {
+        debugPrint('🎓 [KW-TRAIN] Pattern extracted successfully');
+        debugPrint('🎓 [KW-TRAIN] Pattern length: ${pattern.length}');
+        debugPrint('🎓 [KW-TRAIN] Pattern sample: [${pattern.take(5).map((v) => v.toStringAsFixed(3)).join(', ')}...]');
+      }
+
       // Generate unique ID for the profile
       final profileId = DateTime.now().millisecondsSinceEpoch.toString();
-      
+
       // Create keyword profile
       final profile = KeywordProfile(
         id: profileId,
@@ -102,8 +114,11 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
       _keywordPattern = pattern;
       _currentProfile = profile;
 
+      if (kDebugMode) debugPrint('✅ [KW-TRAIN] Keyword training complete!');
+
       return profile;
     } catch (e) {
+      if (kDebugMode) debugPrint('❌ [KW-TRAIN] Training failed: $e');
       throw KeywordDetectionException(
         'Failed to train keyword: ${e.toString()}',
         e,
@@ -298,9 +313,15 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
   /// Start continuous audio monitoring for keyword detection
   Future<void> _startContinuousListening() async {
     try {
+      if (kDebugMode) debugPrint('🎤 [KW-DETECT] Starting continuous listening...');
+
       // Create temporary file for continuous recording
       final tempDir = await getTemporaryDirectory();
       final tempPath = '${tempDir.path}/keyword_listening_${DateTime.now().millisecondsSinceEpoch}.wav';
+
+      if (kDebugMode) debugPrint('🎤 [KW-DETECT] Temp file: $tempPath');
+      if (kDebugMode) debugPrint('🎤 [KW-DETECT] Pattern length: ${_keywordPattern?.length ?? 0}');
+      if (kDebugMode) debugPrint('🎤 [KW-DETECT] Confidence threshold: $_confidenceThreshold');
 
       // Start recording with voice-optimized settings
       await _recorder!.startRecorder(
@@ -310,6 +331,8 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
         numChannels: 1, // Mono for voice
       );
 
+      if (kDebugMode) debugPrint('🎤 [KW-DETECT] Recorder started successfully');
+
       // Set up audio level monitoring for buffer management
       _recorder!.onProgress!.listen((event) {
         if (event.decibels != null) {
@@ -317,13 +340,18 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
         }
       });
 
+      if (kDebugMode) debugPrint('🎤 [KW-DETECT] Audio level monitoring active');
+
       // Set up periodic pattern matching
       _listeningTimer = Timer.periodic(
         const Duration(milliseconds: 100),
         (_) => _performPatternMatching(),
       );
 
+      if (kDebugMode) debugPrint('🎤 [KW-DETECT] Pattern matching timer started (100ms intervals)');
+
     } catch (e) {
+      if (kDebugMode) debugPrint('❌ [KW-DETECT] Failed to start continuous listening: $e');
       throw KeywordDetectionException(
         'Failed to start continuous listening: ${e.toString()}',
         e,
@@ -335,10 +363,15 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
   void _processAudioLevel(double decibels) {
     // Convert decibels to normalized amplitude (0.0 to 1.0)
     final normalizedLevel = _normalizeDecibels(decibels);
-    
+
     // Add to circular buffer
     _audioBuffer.add(normalizedLevel);
-    
+
+    // Log every 50th sample to avoid spam
+    if (_audioBuffer.length % 50 == 0 && kDebugMode) {
+      debugPrint('🎤 [KW-DETECT] Audio: dB=$decibels, normalized=$normalizedLevel, buffer=${_audioBuffer.length}');
+    }
+
     // Maintain buffer size (sliding window)
     if (_audioBuffer.length > _maxBufferSize) {
       _audioBuffer.removeAt(0);
@@ -358,7 +391,13 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
 
   /// Perform simple pattern matching against the trained keyword
   void _performPatternMatching() {
-    if (_keywordPattern == null || _audioBuffer.length < _keywordPattern!.length) {
+    if (_keywordPattern == null) {
+      if (kDebugMode) debugPrint('⚠️ [KW-DETECT] No keyword pattern loaded!');
+      return;
+    }
+
+    if (_audioBuffer.length < _keywordPattern!.length) {
+      // Still building buffer, don't spam logs
       return;
     }
 
@@ -371,14 +410,29 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
 
     // Calculate similarity using cross-correlation
     final confidence = _calculateSimilarity(recentSegment, _keywordPattern!);
-    
+
+    // Log confidence every 2 seconds (20 checks at 100ms intervals)
+    static int _checkCount = 0;
+    _checkCount++;
+    if (_checkCount % 20 == 0 && kDebugMode) {
+      debugPrint('🎯 [KW-DETECT] Confidence: ${(confidence * 100).toStringAsFixed(1)}% (threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%)');
+    }
+
     // Emit confidence level
     _confidenceController?.add(confidence);
 
     // Check if confidence exceeds threshold
     if (confidence >= _confidenceThreshold) {
+      if (kDebugMode) {
+        debugPrint('');
+        debugPrint('🎉🎉🎉 [KW-DETECT] KEYWORD DETECTED! 🎉🎉🎉');
+        debugPrint('🎯 [KW-DETECT] Confidence: ${(confidence * 100).toStringAsFixed(1)}%');
+        debugPrint('🎯 [KW-DETECT] Threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%');
+        debugPrint('');
+      }
+
       _keywordDetectedController?.add(true);
-      
+
       // Add small delay to prevent multiple rapid detections
       Future.delayed(const Duration(milliseconds: 500), () {
         _keywordDetectedController?.add(false);

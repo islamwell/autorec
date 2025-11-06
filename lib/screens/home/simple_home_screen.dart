@@ -157,6 +157,40 @@ class SimpleHomeScreen extends ConsumerWidget {
 
               const SizedBox(height: 16),
 
+              // Manual Recording Button (for testing)
+              _buildActionButton(
+                context: context,
+                theme: theme,
+                label: recorderState.isAutoRecording ? 'Stop Recording' : 'Manual Recording (Test)',
+                icon: recorderState.isAutoRecording ? Icons.stop : Icons.radio_button_checked,
+                color: theme.colorScheme.error,
+                onPressed: () async {
+                  if (!hasPermission) {
+                    final granted = await requestPermission();
+                    if (!granted) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Microphone permission is required'),
+                          ),
+                        );
+                      }
+                      return;
+                    }
+                  }
+                  if (recorderState.isAutoRecording) {
+                    // Stop recording manually
+                    recorderNotifier.stopManualRecording();
+                  } else {
+                    // Start manual recording
+                    recorderNotifier.startManualRecording();
+                  }
+                },
+                enabled: !recorderState.isRecordingKeyword && !recorderState.isListening,
+              ),
+
+              const SizedBox(height: 16),
+
               // Pause/Resume Button with dark round shadow
               _buildActionButton(
                 context: context,
@@ -230,17 +264,49 @@ class SimpleHomeScreen extends ConsumerWidget {
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 12),
-                      TextButton.icon(
-                        onPressed: () {
-                          Navigator.pushNamed(context, '/recordings');
-                        },
-                        icon: const Icon(Icons.list),
-                        label: const Text('View Recordings'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: theme.colorScheme.primary,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          TextButton.icon(
+                            onPressed: () {
+                              Navigator.pushNamed(context, '/recordings');
+                            },
+                            icon: const Icon(Icons.list),
+                            label: const Text('Recordings'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: theme.colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton.icon(
+                            onPressed: () {
+                              Navigator.pushNamed(context, '/scheduled-recordings');
+                            },
+                            icon: const Icon(Icons.schedule),
+                            label: const Text('Schedules'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: theme.colorScheme.secondary,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
+                  ),
+                ),
+
+              // Quick access to schedules if no recordings yet
+              if (recorderState.recordingsCount == 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: TextButton.icon(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/scheduled-recordings');
+                    },
+                    icon: const Icon(Icons.schedule),
+                    label: const Text('Scheduled Recordings'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: theme.colorScheme.secondary,
+                    ),
                   ),
                 ),
             ],

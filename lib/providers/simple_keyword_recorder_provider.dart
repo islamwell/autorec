@@ -187,6 +187,104 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
     }
   }
 
+  /// Start manual recording for testing
+  Future<void> startManualRecording() async {
+    try {
+      if (kDebugMode) debugPrint('🧪 [MANUAL] Starting manual test recording...');
+
+      state = state.copyWith(
+        isAutoRecording: true,
+        recordingTimeRemaining: _autoRecordingDuration,
+        errorMessage: null,
+      );
+
+      // Start recording
+      await _audioService.startRecording();
+
+      if (kDebugMode) debugPrint('🧪 [MANUAL] Manual recording started!');
+
+      // Start countdown timer
+      _countdownTimer?.cancel();
+      _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        final remaining = _autoRecordingDuration - Duration(seconds: timer.tick);
+        if (remaining.isNegative) {
+          timer.cancel();
+        } else {
+          state = state.copyWith(recordingTimeRemaining: remaining);
+        }
+      });
+
+      // Set auto-stop timer for 10 minutes
+      _autoStopTimer?.cancel();
+      _autoStopTimer = Timer(_autoRecordingDuration, () {
+        stopManualRecording();
+      });
+
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('❌ [MANUAL] Error starting manual recording: $e');
+        debugPrint('Stack trace: $stackTrace');
+      }
+      state = state.copyWith(
+        isAutoRecording: false,
+        errorMessage: 'Failed to start manual recording: ${e.toString()}',
+      );
+    }
+  }
+
+  /// Stop manual recording
+  Future<void> stopManualRecording() async {
+    try {
+      if (kDebugMode) debugPrint('🧪 [MANUAL] Stopping manual recording...');
+
+      _autoStopTimer?.cancel();
+      _countdownTimer?.cancel();
+
+      final audioPath = await _audioService.stopRecording();
+
+      if (audioPath != null) {
+        if (kDebugMode) debugPrint('🧪 [MANUAL] Recording stopped. Saving...');
+
+        // Save the recording
+        await _recordingManager.createRecording(
+          audioPath,
+          {
+            'title': 'Manual Test Recording',
+            'description': 'Manual recording created at ${DateTime.now().toString()}',
+            'isManual': true,
+          },
+        );
+
+        final recordings = await _recordingManager.getRecordings();
+
+        state = state.copyWith(
+          isAutoRecording: false,
+          recordingsCount: recordings.length,
+          recordingTimeRemaining: null,
+          errorMessage: null,
+        );
+
+        if (kDebugMode) debugPrint('✅ [MANUAL] Manual recording saved! Total: ${recordings.length}');
+      } else {
+        state = state.copyWith(
+          isAutoRecording: false,
+          recordingTimeRemaining: null,
+          errorMessage: 'Failed to save manual recording',
+        );
+      }
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('❌ [MANUAL] Error stopping manual recording: $e');
+        debugPrint('Stack trace: $stackTrace');
+      }
+      state = state.copyWith(
+        isAutoRecording: false,
+        recordingTimeRemaining: null,
+        errorMessage: 'Failed to save manual recording: ${e.toString()}',
+      );
+    }
+  }
+
   /// Handle keyword detection - start 10-minute recording
   Future<void> _onKeywordDetected() async {
     try {
