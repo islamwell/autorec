@@ -190,16 +190,28 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
   /// Handle keyword detection - start 10-minute recording
   Future<void> _onKeywordDetected() async {
     try {
-      if (kDebugMode) debugPrint('Keyword detected! Starting 10-minute recording...');
+      if (kDebugMode) debugPrint('=== KEYWORD DETECTED! ===');
+      if (kDebugMode) debugPrint('Stopping keyword listening to start main recording...');
+
+      // IMPORTANT: Stop keyword detection listening first to free up the microphone
+      // The keyword detection service is actively recording for pattern matching,
+      // so we need to stop it before starting the main recording
+      await _keywordService.stopListening();
+      _keywordDetectionSubscription?.cancel();
+
+      if (kDebugMode) debugPrint('Keyword listening stopped. Starting 10-minute recording...');
 
       state = state.copyWith(
+        isListening: false, // Update state to reflect that we're no longer listening for keywords
         isAutoRecording: true,
         recordingTimeRemaining: _autoRecordingDuration,
         errorMessage: null,
       );
 
-      // Start recording
+      // Start the main recording
       await _audioService.startRecording();
+
+      if (kDebugMode) debugPrint('Main recording started successfully!');
 
       // Start countdown timer
       _countdownTimer?.cancel();
@@ -217,10 +229,15 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
       _autoStopTimer = Timer(_autoRecordingDuration, () {
         _stopAutoRecording();
       });
-    } catch (e) {
-      if (kDebugMode) debugPrint('Error starting auto-recording: $e');
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('!!! ERROR STARTING AUTO-RECORDING !!!');
+        debugPrint('Error: $e');
+        debugPrint('Stack trace: $stackTrace');
+      }
       state = state.copyWith(
         isAutoRecording: false,
+        isListening: false,
         errorMessage: 'Failed to start recording: ${e.toString()}',
       );
     }
@@ -229,12 +246,16 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
   /// Stop the 10-minute auto-recording and save it
   Future<void> _stopAutoRecording() async {
     try {
+      if (kDebugMode) debugPrint('=== STOPPING AUTO-RECORDING ===');
+
       _autoStopTimer?.cancel();
       _countdownTimer?.cancel();
 
       final audioPath = await _audioService.stopRecording();
 
       if (audioPath != null) {
+        if (kDebugMode) debugPrint('Recording stopped. Saving recording...');
+
         // Save the recording
         await _recordingManager.createRecording(
           audioPath,
@@ -254,7 +275,13 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
           errorMessage: null,
         );
 
-        if (kDebugMode) debugPrint('Auto-recording saved successfully');
+        if (kDebugMode) debugPrint('Auto-recording saved successfully! Total recordings: ${recordings.length}');
+
+        // Optionally restart keyword listening after recording finishes
+        // This allows continuous keyword detection for multiple recordings
+        if (kDebugMode) debugPrint('Restarting keyword listening for continuous detection...');
+        await startListening();
+
       } else {
         state = state.copyWith(
           isAutoRecording: false,
@@ -262,8 +289,12 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
           errorMessage: 'Failed to save recording',
         );
       }
-    } catch (e) {
-      if (kDebugMode) debugPrint('Error stopping auto-recording: $e');
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('!!! ERROR STOPPING AUTO-RECORDING !!!');
+        debugPrint('Error: $e');
+        debugPrint('Stack trace: $stackTrace');
+      }
       state = state.copyWith(
         isAutoRecording: false,
         recordingTimeRemaining: null,

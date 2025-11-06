@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'audio/audio_recording_service.dart';
 import 'audio/audio_playback_service.dart';
 import 'keyword_detection/keyword_detection_service.dart';
@@ -18,6 +19,8 @@ import 'timer/auto_stop_timer_service_impl.dart';
 import 'notifications/notification_service.dart';
 import 'notifications/notification_service_impl.dart';
 import 'state/state_persistence_service.dart';
+import 'scheduling/scheduled_recording_service.dart';
+import 'scheduling/scheduled_recording_service_impl.dart';
 
 /// Service locator using Riverpod providers for dependency injection
 /// This file defines all the service providers that can be injected throughout the app
@@ -102,6 +105,15 @@ final sharingServiceProvider = Provider<SharingService>((ref) {
 /// This is created automatically and doesn't need to be overridden
 final statePersistenceServiceProvider = Provider<StatePersistenceService>((ref) {
   return StatePersistenceServiceImpl();
+});
+
+/// Provider for ScheduledRecordingService
+/// This depends on SharedPreferences, AudioRecordingService, and RecordingManagerService
+final scheduledRecordingServiceProvider = FutureProvider<ScheduledRecordingService>((ref) async {
+  final prefs = await SharedPreferences.getInstance();
+  final audioService = ref.read(audioRecordingServiceProvider);
+  final recordingManager = ref.read(recordingManagerServiceProvider);
+  return ScheduledRecordingServiceImpl(prefs, audioService, recordingManager);
 });
 
 /// Composite provider that ensures all required services are available
