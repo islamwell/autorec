@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -35,7 +36,10 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
   // Simple pattern matching state
   List<double>? _keywordPattern;
   static const double _patternMatchThreshold = 0.8;
-  
+
+  // Counter for logging frequency
+  int _checkCount = 0;
+
   @override
   Stream<bool> get keywordDetectedStream => 
       _keywordDetectedController?.stream ?? const Stream.empty();
@@ -412,7 +416,6 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
     final confidence = _calculateSimilarity(recentSegment, _keywordPattern!);
 
     // Log confidence every 2 seconds (20 checks at 100ms intervals)
-    static int _checkCount = 0;
     _checkCount++;
     if (_checkCount % 20 == 0 && kDebugMode) {
       debugPrint('🎯 [KW-DETECT] Confidence: ${(confidence * 100).toStringAsFixed(1)}% (threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%)');
