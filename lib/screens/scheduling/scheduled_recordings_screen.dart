@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart' hide TimeOfDay;
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../models/scheduled_recording.dart';
+import '../../models/scheduled_recording.dart' as models;
 import '../../providers/scheduled_recording_provider.dart';
 
 /// Screen for managing scheduled recordings
@@ -134,7 +134,7 @@ class ScheduledRecordingsScreen extends ConsumerWidget {
   Widget _buildRecordingCard(
     BuildContext context,
     ThemeData theme,
-    ScheduledRecording recording,
+    models.ScheduledRecording recording,
     ScheduledRecordingNotifier notifier,
   ) {
     return Card(
@@ -229,7 +229,7 @@ class ScheduledRecordingsScreen extends ConsumerWidget {
     ScheduledRecordingNotifier notifier,
   ) {
     final nameController = TextEditingController();
-    TimeOfDay selectedTime = const TimeOfDay(hour: 9, minute: 0);
+    TimeOfDay selectedTime = const TimeOfDay(hour: 9, minute: 0); // Flutter's TimeOfDay
     int durationMinutes = 10;
 
     showDialog(
@@ -269,10 +269,7 @@ class ScheduledRecordingsScreen extends ConsumerWidget {
                         );
                         if (time != null) {
                           setState(() {
-                            selectedTime = TimeOfDay(
-                              hour: time.hour,
-                              minute: time.minute,
-                            );
+                            selectedTime = time;
                           });
                         }
                       },
@@ -319,7 +316,10 @@ class ScheduledRecordingsScreen extends ConsumerWidget {
 
                     notifier.createRecording(
                       name: nameController.text.trim(),
-                      time: selectedTime,
+                      time: models.TimeOfDay(
+                        hour: selectedTime.hour,
+                        minute: selectedTime.minute,
+                      ),
                       duration: Duration(minutes: durationMinutes),
                     );
 
@@ -337,7 +337,7 @@ class ScheduledRecordingsScreen extends ConsumerWidget {
 
   void _showDeleteConfirmation(
     BuildContext context,
-    ScheduledRecording recording,
+    models.ScheduledRecording recording,
     ScheduledRecordingNotifier notifier,
   ) {
     showDialog(
