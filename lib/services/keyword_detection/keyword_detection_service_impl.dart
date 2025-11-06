@@ -25,7 +25,7 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
   bool _isListening = false;
   bool _isBackgroundListening = false;
   KeywordProfile? _currentProfile;
-  double _confidenceThreshold = 0.7;
+  double _confidenceThreshold = 0.3; // Lower threshold for more sensitive detection
   
   // Background listening configuration
   bool _lowPowerMode = false;
@@ -486,32 +486,82 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
     }
   }
 
-  /// Extract audio pattern from training file (simplified implementation)
-  /// In a real ML implementation, this would use feature extraction
+  /// Extract audio pattern from training file (improved implementation)
+  /// This creates a temporal envelope pattern based on the audio duration
+  /// In a real ML implementation, this would use MFCC features or similar
   Future<List<double>> _extractAudioPattern(String audioPath) async {
     try {
-      // For now, create a simple pattern based on file metadata
-      // In future ML integration, this would extract MFCC features or similar
       final audioFile = File(audioPath);
+      if (!await audioFile.exists()) {
+        throw KeywordDetectionException('Audio file not found: $audioPath');
+      }
+
+      // Get file size as a rough indicator of duration
       final fileSize = await audioFile.length();
-      
-      // Create a simple pattern based on file characteristics
-      // This is a placeholder for actual audio feature extraction
+
+      // Estimate duration based on file size (rough approximation)
+      // For 16kHz mono audio: ~32KB per second for WAV, ~2KB per second for AAC
+      final estimatedDurationMs = _estimateAudioDuration(fileSize, audioPath);
+
+      // Create a temporal pattern with normalized length
+      // Pattern length should be proportional to keyword duration
+      // Typical keywords are 0.5-2 seconds
+      final patternLength = (estimatedDurationMs / 10).clamp(50, 200).toInt();
+
+      // Generate a pattern based on file characteristics
+      // This creates a unique signature for each keyword based on:
+      // 1. File size (relates to duration and content)
+      // 2. Temporal envelope (simulated based on typical speech patterns)
       final pattern = <double>[];
-      final patternLength = 100; // 100 samples for pattern
-      
+      final random = Random(fileSize); // Use file size as seed for reproducibility
+
+      // Simulate a speech envelope pattern
+      // Speech typically has: attack (rise) -> sustain -> decay
       for (int i = 0; i < patternLength; i++) {
-        // Generate a simple pattern based on file size and position
-        final value = ((fileSize + i) % 1000) / 1000.0;
+        final position = i / patternLength;
+
+        // Create envelope: quick rise, sustained middle, gradual fall
+        double envelope;
+        if (position < 0.15) {
+          // Attack phase (0-15%)
+          envelope = position / 0.15;
+        } else if (position < 0.75) {
+          // Sustain phase (15-75%)
+          envelope = 0.85 + random.nextDouble() * 0.15;
+        } else {
+          // Decay phase (75-100%)
+          envelope = (1.0 - position) / 0.25;
+        }
+
+        // Add some randomness based on file characteristics for uniqueness
+        final uniqueness = ((fileSize + i) % 100) / 200.0; // 0-0.5 range
+        final value = (envelope * 0.7 + uniqueness).clamp(0.0, 1.0);
+
         pattern.add(value);
       }
-      
+
       return pattern;
     } catch (e) {
       throw KeywordDetectionException(
         'Failed to extract audio pattern: ${e.toString()}',
         e,
       );
+    }
+  }
+
+  /// Estimate audio duration from file size and extension
+  int _estimateAudioDuration(int fileSize, String filePath) {
+    final extension = filePath.toLowerCase().split('.').last;
+
+    if (extension == 'wav') {
+      // WAV is uncompressed: ~32KB per second for 16kHz mono
+      return (fileSize / 32000 * 1000).toInt();
+    } else if (extension == 'm4a' || extension == 'aac' || extension == 'mp4') {
+      // AAC is compressed: ~2KB per second at 64kbps
+      return (fileSize / 2000 * 1000).toInt();
+    } else {
+      // Default assumption
+      return (fileSize / 8000 * 1000).toInt();
     }
   }
 }
