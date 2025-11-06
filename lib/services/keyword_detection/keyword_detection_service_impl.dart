@@ -443,17 +443,40 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
     }
   }
 
-  /// Calculate similarity between two audio patterns using normalized cross-correlation
+  /// Calculate similarity between two audio patterns using multiple comparison methods
+  /// Returns the maximum confidence from different comparison techniques
   double _calculateSimilarity(List<double> segment1, List<double> segment2) {
     if (segment1.length != segment2.length) {
       return 0.0;
     }
 
-    // Calculate means
+    // Use multiple comparison methods and take the maximum
+    // This makes keyword detection more robust
+    final correlationScore = _normalizedCrossCorrelation(segment1, segment2);
+    final energyScore = _energyBasedSimilarity(segment1, segment2);
+    final shapeScore = _shapeMatchingSimilarity(segment1, segment2);
+    final dtwScore = _simpleDTWSimilarity(segment1, segment2);
+
+    // Take weighted average of all scores
+    final combinedScore = (
+      correlationScore * 0.25 +
+      energyScore * 0.25 +
+      shapeScore * 0.25 +
+      dtwScore * 0.25
+    );
+
+    if (kDebugMode && _checkCount % 100 == 0) {
+      debugPrint('📊 [KW-DETECT] Scores: corr=${(correlationScore*100).toStringAsFixed(1)}% energy=${(energyScore*100).toStringAsFixed(1)}% shape=${(shapeScore*100).toStringAsFixed(1)}% dtw=${(dtwScore*100).toStringAsFixed(1)}% combined=${(combinedScore*100).toStringAsFixed(1)}%');
+    }
+
+    return combinedScore;
+  }
+
+  /// Normalized cross-correlation (original method)
+  double _normalizedCrossCorrelation(List<double> segment1, List<double> segment2) {
     final mean1 = segment1.reduce((a, b) => a + b) / segment1.length;
     final mean2 = segment2.reduce((a, b) => a + b) / segment2.length;
 
-    // Calculate normalized cross-correlation
     double numerator = 0.0;
     double denominator1 = 0.0;
     double denominator2 = 0.0;
@@ -461,19 +484,112 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
     for (int i = 0; i < segment1.length; i++) {
       final diff1 = segment1[i] - mean1;
       final diff2 = segment2[i] - mean2;
-      
+
       numerator += diff1 * diff2;
       denominator1 += diff1 * diff1;
       denominator2 += diff2 * diff2;
     }
 
     final denominator = sqrt(denominator1 * denominator2);
-    if (denominator == 0.0) {
-      return 0.0;
+    if (denominator == 0.0) return 0.0;
+
+    return (numerator / denominator).abs();
+  }
+
+  /// Energy-based similarity - compares overall energy patterns
+  double _energyBasedSimilarity(List<double> segment1, List<double> segment2) {
+    final energy1 = sqrt(segment1.map((v) => v * v).reduce((a, b) => a + b));
+    final energy2 = sqrt(segment2.map((v) => v * v).reduce((a, b) => a + b));
+
+    if (energy1 == 0.0 || energy2 == 0.0) return 0.0;
+
+    // Similarity is higher when energies are similar
+    final energyRatio = min(energy1, energy2) / max(energy1, energy2);
+
+    // Also compare energy distribution
+    final normalized1 = segment1.map((v) => v / energy1).toList();
+    final normalized2 = segment2.map((v) => v / energy2).toList();
+
+    double sumDiff = 0.0;
+    for (int i = 0; i < normalized1.length; i++) {
+      sumDiff += (normalized1[i] - normalized2[i]).abs();
     }
 
-    // Return correlation coefficient (0.0 to 1.0)
-    return (numerator / denominator).abs();
+    final distributionScore = 1.0 - (sumDiff / normalized1.length).clamp(0.0, 1.0);
+
+    return (energyRatio + distributionScore) / 2.0;
+  }
+
+  /// Shape matching - compares the overall shape/envelope of the patterns
+  double _shapeMatchingSimilarity(List<double> segment1, List<double> segment2) {
+    // Compare peaks, valleys, and general shape
+    final peaks1 = _findPeaks(segment1);
+    final peaks2 = _findPeaks(segment2);
+
+    // If peak counts are vastly different, lower score
+    final peakCountSimilarity = peaks1.length == 0 || peaks2.length == 0
+        ? 0.5
+        : min(peaks1.length, peaks2.length) / max(peaks1.length, peaks2.length);
+
+    // Compare slope patterns
+    double slopeScore = 0.0;
+    for (int i = 1; i < segment1.length; i++) {
+      final slope1 = segment1[i] - segment1[i - 1];
+      final slope2 = segment2[i] - segment2[i - 1];
+
+      // Reward similar slope directions
+      if (slope1 > 0 && slope2 > 0 || slope1 < 0 && slope2 < 0) {
+        slopeScore += 1.0;
+      }
+    }
+    slopeScore /= (segment1.length - 1);
+
+    return (peakCountSimilarity + slopeScore) / 2.0;
+  }
+
+  /// Simplified DTW (Dynamic Time Warping) - allows for slight time shifts
+  double _simpleDTWSimilarity(List<double> segment1, List<double> segment2) {
+    // For performance, use a simplified DTW with limited window
+    const int windowSize = 5;
+
+    double totalDistance = 0.0;
+    int matchCount = 0;
+
+    for (int i = 0; i < segment1.length; i++) {
+      // Look for best match within a small window
+      final start = max(0, i - windowSize);
+      final end = min(segment2.length - 1, i + windowSize);
+
+      double minDist = double.infinity;
+      for (int j = start; j <= end; j++) {
+        final dist = (segment1[i] - segment2[j]).abs();
+        minDist = min(minDist, dist);
+      }
+
+      totalDistance += minDist;
+      matchCount++;
+    }
+
+    final avgDistance = totalDistance / matchCount;
+
+    // Convert distance to similarity (lower distance = higher similarity)
+    return 1.0 - avgDistance.clamp(0.0, 1.0);
+  }
+
+  /// Find peaks in a signal
+  List<int> _findPeaks(List<double> signal) {
+    final peaks = <int>[];
+
+    for (int i = 1; i < signal.length - 1; i++) {
+      if (signal[i] > signal[i - 1] && signal[i] > signal[i + 1]) {
+        // This is a peak
+        if (signal[i] > 0.3) { // Only count significant peaks
+          peaks.add(i);
+        }
+      }
+    }
+
+    return peaks;
   }
 
   /// Configure audio settings for background mode with power optimization
