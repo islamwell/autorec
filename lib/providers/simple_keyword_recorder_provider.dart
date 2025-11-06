@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/audio/audio_recording_service.dart';
 import '../services/keyword_detection/keyword_detection_service.dart';
 import '../services/storage/recording_manager_service.dart';
-import '../services/background/simple_foreground_service.dart';
 import '../services/service_locator.dart';
 
 /// Simple state for keyword recorder
@@ -53,7 +52,6 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
   final AudioRecordingService _audioService;
   final KeywordDetectionService _keywordService;
   final RecordingManagerService _recordingManager;
-  final SimpleForegroundService _foregroundService = SimpleForegroundService();
 
   Timer? _autoStopTimer;
   Timer? _countdownTimer;
@@ -65,12 +63,7 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
     this._audioService,
     this._keywordService,
     this._recordingManager,
-  ) : super(const SimpleKeywordRecorderState()) {
-    // Initialize foreground service on creation (non-blocking, errors ignored)
-    _foregroundService.initialize().catchError((error) {
-      if (kDebugMode) debugPrint('Warning: Failed to initialize foreground service: $error');
-    });
-  }
+  ) : super(const SimpleKeywordRecorderState());
 
   /// Start recording a keyword
   Future<void> startKeywordRecording() async {
@@ -129,46 +122,13 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
         errorMessage: null,
       );
 
-      if (kDebugMode) debugPrint('Step 1: State updated');
-
-      // Try to start foreground service (optional - don't fail if it doesn't work)
-      try {
-        if (kDebugMode) debugPrint('Step 2: Attempting to start foreground service...');
-        final serviceStarted = await _foregroundService.start().timeout(
-          const Duration(seconds: 5),
-          onTimeout: () {
-            if (kDebugMode) debugPrint('Foreground service start timed out');
-            return false;
-          },
-        );
-
-        if (serviceStarted) {
-          if (kDebugMode) debugPrint('Step 3: Foreground service started successfully');
-
-          // Update notification only if service started
-          try {
-            await _foregroundService.updateNotification(
-              title: 'Voice Keyword Recorder',
-              content: 'Listening for your keyword...',
-            );
-            if (kDebugMode) debugPrint('Step 4: Notification updated');
-          } catch (notifError) {
-            if (kDebugMode) debugPrint('Warning: Failed to update notification: $notifError');
-          }
-        } else {
-          if (kDebugMode) debugPrint('Step 3: Foreground service failed to start (continuing anyway)');
-        }
-      } catch (serviceError) {
-        if (kDebugMode) debugPrint('Warning: Foreground service error (continuing anyway): $serviceError');
-      }
-
-      // Start keyword detection (this is critical)
-      if (kDebugMode) debugPrint('Step 5: Starting keyword detection service...');
+      // Start keyword detection
+      if (kDebugMode) debugPrint('Starting keyword detection service...');
       await _keywordService.startListening();
-      if (kDebugMode) debugPrint('Step 6: Keyword detection service started');
+      if (kDebugMode) debugPrint('Keyword detection service started');
 
       // Listen for keyword detection
-      if (kDebugMode) debugPrint('Step 7: Setting up keyword detection stream listener...');
+      if (kDebugMode) debugPrint('Setting up keyword detection stream listener...');
       _keywordDetectionSubscription?.cancel();
       _keywordDetectionSubscription = _keywordService.keywordDetectedStream.listen(
         (detected) {
@@ -182,7 +142,6 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
         },
       );
 
-      if (kDebugMode) debugPrint('Step 8: Successfully started listening!');
       if (kDebugMode) debugPrint('=== LISTENING STARTED ===');
 
     } catch (e, stackTrace) {
@@ -196,13 +155,6 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
         isListening: false,
         errorMessage: 'Failed to start listening: ${e.toString()}',
       );
-
-      // Try to stop foreground service if it was started
-      try {
-        await _foregroundService.stop();
-      } catch (_) {
-        // Ignore errors when stopping
-      }
     }
   }
 
@@ -212,30 +164,8 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
       if (kDebugMode) debugPrint('=== PAUSE LISTENING ===');
 
       // Stop keyword detection
-      try {
-        if (kDebugMode) debugPrint('Stopping keyword detection...');
-        await _keywordService.stopListening();
-        if (kDebugMode) debugPrint('Keyword detection stopped');
-      } catch (e) {
-        if (kDebugMode) debugPrint('Error stopping keyword service: $e');
-      }
-
-      // Cancel stream subscription
-      try {
-        _keywordDetectionSubscription?.cancel();
-        if (kDebugMode) debugPrint('Stream subscription cancelled');
-      } catch (e) {
-        if (kDebugMode) debugPrint('Error cancelling subscription: $e');
-      }
-
-      // Stop foreground service (optional - don't fail if it doesn't work)
-      try {
-        if (kDebugMode) debugPrint('Stopping foreground service...');
-        await _foregroundService.stop();
-        if (kDebugMode) debugPrint('Foreground service stopped');
-      } catch (e) {
-        if (kDebugMode) debugPrint('Warning: Failed to stop foreground service: $e');
-      }
+      await _keywordService.stopListening();
+      _keywordDetectionSubscription?.cancel();
 
       state = state.copyWith(
         isListening: false,
@@ -266,12 +196,6 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
         isAutoRecording: true,
         recordingTimeRemaining: _autoRecordingDuration,
         errorMessage: null,
-      );
-
-      // Update notification to show recording status
-      await _foregroundService.updateNotification(
-        title: 'Voice Keyword Recorder',
-        content: 'Recording (10 min)...',
       );
 
       // Start recording
@@ -330,14 +254,6 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
           errorMessage: null,
         );
 
-        // Update notification back to listening status
-        if (state.isListening) {
-          await _foregroundService.updateNotification(
-            title: 'Voice Keyword Recorder',
-            content: 'Listening for your keyword...',
-          );
-        }
-
         if (kDebugMode) debugPrint('Auto-recording saved successfully');
       } else {
         state = state.copyWith(
@@ -361,7 +277,6 @@ class SimpleKeywordRecorderNotifier extends StateNotifier<SimpleKeywordRecorderS
     _autoStopTimer?.cancel();
     _countdownTimer?.cancel();
     _keywordDetectionSubscription?.cancel();
-    _foregroundService.stop();
     super.dispose();
   }
 }
