@@ -1,40 +1,43 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../models/keyword_profile.dart';
 import 'keyword_detection_service.dart';
+import '../audio_features/mfcc_extractor.dart';
 
-/// Implementation of KeywordDetectionService with basic pattern matching
-/// This serves as foundation for future ML integration
+/// Implementation of KeywordDetectionService with ML-based MFCC feature extraction
+/// Uses Mel-Frequency Cepstral Coefficients for accurate keyword spotting
 class KeywordDetectionServiceImpl implements KeywordDetectionService {
   FlutterSoundRecorder? _recorder;
   StreamController<bool>? _keywordDetectedController;
   StreamController<double>? _confidenceController;
   Timer? _listeningTimer;
-  
+
   // Audio buffer management
   final List<double> _audioBuffer = [];
   static const int _bufferSizeMs = 3000; // 3 seconds buffer
   static const int _sampleRate = 16000; // 16kHz for voice
   static const int _maxBufferSize = _bufferSizeMs * _sampleRate ~/ 1000;
-  
+
   // Detection state
   bool _isListening = false;
   bool _isBackgroundListening = false;
   KeywordProfile? _currentProfile;
-  double _confidenceThreshold = 0.3; // Lower threshold for more sensitive detection
-  
+  double _confidenceThreshold = 0.5; // Adjusted for MFCC-based detection
+
   // Background listening configuration
   bool _lowPowerMode = false;
   Duration _maxBackgroundDuration = const Duration(hours: 8);
   Timer? _backgroundTimeoutTimer;
-  
-  // Simple pattern matching state
-  List<double>? _keywordPattern;
+
+  // ML-based feature extraction
+  late final MfccExtractor _mfccExtractor;
+  List<List<double>>? _keywordMfccFeatures; // 2D MFCC feature matrix
   static const double _patternMatchThreshold = 0.8;
 
   // Counter for logging frequency
@@ -63,9 +66,18 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
     _keywordDetectedController = StreamController<bool>.broadcast();
     _confidenceController = StreamController<double>.broadcast();
 
+    // Initialize MFCC extractor with optimal parameters for keyword spotting
+    _mfccExtractor = MfccExtractor(
+      sampleRate: _sampleRate,
+      nMfcc: 13, // Standard number of MFCC coefficients
+      nMels: 40, // Number of Mel filterbanks
+      nFft: 512, // FFT window size
+      hopLength: 160, // 10ms hop at 16kHz
+    );
+
     try {
       await _recorder!.openRecorder();
-      
+
       // Configure for continuous listening with low latency
       await _recorder!.setSubscriptionDuration(
         const Duration(milliseconds: 50), // 50ms updates for responsive detection
@@ -93,13 +105,13 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
       final fileSize = await audioFile.length();
       if (kDebugMode) debugPrint('🎓 [KW-TRAIN] File size: ${fileSize} bytes');
 
-      // Extract audio pattern from the training file
-      final pattern = await _extractAudioPattern(audioPath);
+      // Extract MFCC features from the training file
+      final mfccFeatures = await _extractAudioPattern(audioPath);
 
       if (kDebugMode) {
-        debugPrint('🎓 [KW-TRAIN] Pattern extracted successfully');
-        debugPrint('🎓 [KW-TRAIN] Pattern length: ${pattern.length}');
-        debugPrint('🎓 [KW-TRAIN] Pattern sample: [${pattern.take(5).map((v) => v.toStringAsFixed(3)).join(', ')}...]');
+        debugPrint('🎓 [KW-TRAIN] MFCC features extracted successfully');
+        debugPrint('🎓 [KW-TRAIN] Feature frames: ${mfccFeatures.length}');
+        debugPrint('🎓 [KW-TRAIN] Coefficients per frame: ${mfccFeatures.isNotEmpty ? mfccFeatures[0].length : 0}');
       }
 
       // Generate unique ID for the profile
@@ -114,8 +126,8 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
         confidence: _confidenceThreshold,
       );
 
-      // Store the pattern for matching
-      _keywordPattern = pattern;
+      // Store the MFCC features for matching
+      _keywordMfccFeatures = mfccFeatures;
       _currentProfile = profile;
 
       if (kDebugMode) debugPrint('✅ [KW-TRAIN] Keyword training complete!');
@@ -148,7 +160,7 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
         await _initialize();
       }
 
-      if (_currentProfile == null || _keywordPattern == null) {
+      if (_currentProfile == null || _keywordMfccFeatures == null) {
         throw KeywordDetectionException('No keyword profile loaded. Train a keyword first.');
       }
 
@@ -196,10 +208,10 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
         throw KeywordDetectionException('Invalid keyword profile');
       }
 
-      // Load the audio pattern from the profile's model path
-      final pattern = await _extractAudioPattern(profile.modelPath);
-      
-      _keywordPattern = pattern;
+      // Load the MFCC features from the profile's model path
+      final mfccFeatures = await _extractAudioPattern(profile.modelPath);
+
+      _keywordMfccFeatures = mfccFeatures;
       _currentProfile = profile;
       _confidenceThreshold = profile.confidence;
 
@@ -310,7 +322,7 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
     _keywordDetectedController = null;
     _confidenceController = null;
     _currentProfile = null;
-    _keywordPattern = null;
+    _keywordMfccFeatures = null;
     _audioBuffer.clear();
   }
 
@@ -324,8 +336,8 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
       final tempPath = '${tempDir.path}/keyword_listening_${DateTime.now().millisecondsSinceEpoch}.wav';
 
       if (kDebugMode) debugPrint('🎤 [KW-DETECT] Temp file: $tempPath');
-      if (kDebugMode) debugPrint('🎤 [KW-DETECT] Pattern length: ${_keywordPattern?.length ?? 0}');
-      if (kDebugMode) debugPrint('🎤 [KW-DETECT] Confidence threshold: $_confidenceThreshold');
+      if (kDebugMode) debugPrint('🧠 [ML-DETECT] MFCC Feature frames: ${_keywordMfccFeatures?.length ?? 0}');
+      if (kDebugMode) debugPrint('🎯 [ML-DETECT] Confidence threshold: $_confidenceThreshold');
 
       // Start recording with voice-optimized settings
       await _recorder!.startRecorder(
@@ -393,53 +405,73 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
     return (clampedDb - minDb) / (maxDb - minDb);
   }
 
-  /// Perform simple pattern matching against the trained keyword
+  /// Perform MFCC-based pattern matching against the trained keyword
   void _performPatternMatching() {
-    if (_keywordPattern == null) {
-      if (kDebugMode) debugPrint('⚠️ [KW-DETECT] No keyword pattern loaded!');
+    if (_keywordMfccFeatures == null) {
+      if (kDebugMode) debugPrint('⚠️ [KW-DETECT] No keyword MFCC features loaded!');
       return;
     }
 
-    if (_audioBuffer.length < _keywordPattern!.length) {
-      // Still building buffer, don't spam logs
+    // Need enough audio samples for MFCC extraction
+    // At least 1 second of audio (16000 samples)
+    const minSamples = 16000;
+    if (_audioBuffer.length < minSamples) {
       return;
     }
 
-    // Get the most recent audio segment matching keyword length
-    final segmentLength = _keywordPattern!.length;
-    final recentSegment = _audioBuffer.sublist(
-      _audioBuffer.length - segmentLength,
-      _audioBuffer.length,
-    );
+    try {
+      // Extract MFCC features from recent audio buffer
+      // Use the last 2 seconds of audio to search for the keyword
+      final searchWindowSamples = min(32000, _audioBuffer.length);
+      final recentAudio = _audioBuffer.sublist(
+        _audioBuffer.length - searchWindowSamples,
+        _audioBuffer.length,
+      );
 
-    // Calculate similarity using cross-correlation
-    final confidence = _calculateSimilarity(recentSegment, _keywordPattern!);
+      // Extract MFCC features from the recent audio
+      final recentMfccFeatures = _mfccExtractor.extractFeatures(recentAudio);
 
-    // Log confidence every 2 seconds (20 checks at 100ms intervals)
-    _checkCount++;
-    if (_checkCount % 20 == 0 && kDebugMode) {
-      debugPrint('🎯 [KW-DETECT] Confidence: ${(confidence * 100).toStringAsFixed(1)}% (threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%)');
-    }
-
-    // Emit confidence level
-    _confidenceController?.add(confidence);
-
-    // Check if confidence exceeds threshold
-    if (confidence >= _confidenceThreshold) {
-      if (kDebugMode) {
-        debugPrint('');
-        debugPrint('🎉🎉🎉 [KW-DETECT] KEYWORD DETECTED! 🎉🎉🎉');
-        debugPrint('🎯 [KW-DETECT] Confidence: ${(confidence * 100).toStringAsFixed(1)}%');
-        debugPrint('🎯 [KW-DETECT] Threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%');
-        debugPrint('');
+      if (recentMfccFeatures.isEmpty) {
+        return;
       }
 
-      _keywordDetectedController?.add(true);
+      // Calculate similarity using DTW on MFCC features
+      final confidence = _mfccExtractor.computeSimilarity(
+        recentMfccFeatures,
+        _keywordMfccFeatures!,
+      );
 
-      // Add small delay to prevent multiple rapid detections
-      Future.delayed(const Duration(milliseconds: 500), () {
-        _keywordDetectedController?.add(false);
-      });
+      // Log confidence every 2 seconds (20 checks at 100ms intervals)
+      _checkCount++;
+      if (_checkCount % 20 == 0 && kDebugMode) {
+        debugPrint('🧠 [ML-DETECT] MFCC Confidence: ${(confidence * 100).toStringAsFixed(1)}% (threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%)');
+      }
+
+      // Emit confidence level
+      _confidenceController?.add(confidence);
+
+      // Check if confidence exceeds threshold
+      if (confidence >= _confidenceThreshold) {
+        if (kDebugMode) {
+          debugPrint('');
+          debugPrint('🎉🎉🎉 [ML-DETECT] KEYWORD DETECTED WITH ML! 🎉🎉🎉');
+          debugPrint('🧠 [ML-DETECT] MFCC Confidence: ${(confidence * 100).toStringAsFixed(1)}%');
+          debugPrint('🎯 [ML-DETECT] Threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%');
+          debugPrint('');
+        }
+
+        _keywordDetectedController?.add(true);
+
+        // Clear buffer after detection to prevent repeated triggers
+        _audioBuffer.clear();
+
+        // Add small delay to prevent multiple rapid detections
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _keywordDetectedController?.add(false);
+        });
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('❌ [ML-DETECT] Error in MFCC matching: $e');
     }
   }
 
@@ -659,64 +691,39 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
     }
   }
 
-  /// Extract audio pattern from training file (improved implementation)
-  /// This creates a temporal envelope pattern based on the audio duration
-  /// In a real ML implementation, this would use MFCC features or similar
-  Future<List<double>> _extractAudioPattern(String audioPath) async {
+  /// Extract MFCC features from training audio file using ML-based feature extraction
+  /// Returns a 2D matrix of MFCC coefficients representing the keyword
+  Future<List<List<double>>> _extractAudioPattern(String audioPath) async {
     try {
+      if (kDebugMode) debugPrint('🧠 [ML-EXTRACT] Extracting MFCC features from audio...');
+
       final audioFile = File(audioPath);
       if (!await audioFile.exists()) {
         throw KeywordDetectionException('Audio file not found: $audioPath');
       }
 
-      // Get file size as a rough indicator of duration
-      final fileSize = await audioFile.length();
+      // Read the WAV file
+      final wavData = await audioFile.readAsBytes();
 
-      // Estimate duration based on file size (rough approximation)
-      // For 16kHz mono audio: ~32KB per second for WAV, ~2KB per second for AAC
-      final estimatedDurationMs = _estimateAudioDuration(fileSize, audioPath);
+      if (kDebugMode) debugPrint('🧠 [ML-EXTRACT] File size: ${wavData.length} bytes');
 
-      // Create a temporal pattern with normalized length
-      // Pattern length should be proportional to keyword duration
-      // Typical keywords are 0.5-2 seconds
-      final patternLength = (estimatedDurationMs / 10).clamp(50, 200).toInt();
+      // Extract MFCC features using ML-based extractor
+      final mfccFeatures = _mfccExtractor.extractFromWav(wavData);
 
-      // Generate a pattern based on file characteristics
-      // This creates a unique signature for each keyword based on:
-      // 1. File size (relates to duration and content)
-      // 2. Temporal envelope (simulated based on typical speech patterns)
-      final pattern = <double>[];
-      final random = Random(fileSize); // Use file size as seed for reproducibility
-
-      // Simulate a speech envelope pattern
-      // Speech typically has: attack (rise) -> sustain -> decay
-      for (int i = 0; i < patternLength; i++) {
-        final position = i / patternLength;
-
-        // Create envelope: quick rise, sustained middle, gradual fall
-        double envelope;
-        if (position < 0.15) {
-          // Attack phase (0-15%)
-          envelope = position / 0.15;
-        } else if (position < 0.75) {
-          // Sustain phase (15-75%)
-          envelope = 0.85 + random.nextDouble() * 0.15;
-        } else {
-          // Decay phase (75-100%)
-          envelope = (1.0 - position) / 0.25;
-        }
-
-        // Add some randomness based on file characteristics for uniqueness
-        final uniqueness = ((fileSize + i) % 100) / 200.0; // 0-0.5 range
-        final value = (envelope * 0.7 + uniqueness).clamp(0.0, 1.0);
-
-        pattern.add(value);
+      if (kDebugMode) {
+        debugPrint('🧠 [ML-EXTRACT] MFCC Features extracted successfully');
+        debugPrint('🧠 [ML-EXTRACT] Feature matrix: ${mfccFeatures.length} frames x ${mfccFeatures.isNotEmpty ? mfccFeatures[0].length : 0} coefficients');
+        debugPrint('🧠 [ML-EXTRACT] Duration: ~${(mfccFeatures.length * 10)}ms');
       }
 
-      return pattern;
+      if (mfccFeatures.isEmpty) {
+        throw KeywordDetectionException('Failed to extract MFCC features: empty result');
+      }
+
+      return mfccFeatures;
     } catch (e) {
       throw KeywordDetectionException(
-        'Failed to extract audio pattern: ${e.toString()}',
+        'Failed to extract MFCC features: ${e.toString()}',
         e,
       );
     }
