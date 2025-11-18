@@ -298,27 +298,58 @@ class MfccExtractor {
   }
 
   /// Parse WAV file and extract audio samples
+  /// Properly handles variable-length WAV headers by searching for the "data" chunk
   List<double> _parseWavFile(Uint8List wavData) {
-    // Skip WAV header (44 bytes for standard PCM WAV)
-    const headerSize = 44;
-
-    if (wavData.length < headerSize) {
+    if (wavData.length < 44) {
       return [];
     }
 
-    final audioData = wavData.sublist(headerSize);
+    // Find the "data" chunk marker
+    int dataStart = _findDataChunk(wavData);
+    if (dataStart < 0) {
+      // Fallback to standard header size if not found
+      dataStart = 44;
+    }
+
+    if (dataStart >= wavData.length) {
+      return [];
+    }
+
+    final audioData = wavData.sublist(dataStart);
     final samples = <double>[];
 
-    // Parse 16-bit PCM samples
+    // Parse 16-bit PCM samples (little-endian)
     for (int i = 0; i < audioData.length - 1; i += 2) {
-      final sample = audioData[i] | (audioData[i + 1] << 8);
+      final byte1 = audioData[i];
+      final byte2 = audioData[i + 1];
+
+      // Combine bytes (little-endian: least significant byte first)
+      final sample = byte1 | (byte2 << 8);
+
       // Convert from unsigned to signed 16-bit
       final signed = sample > 32767 ? sample - 65536 : sample;
+
       // Normalize to -1.0 to 1.0
       samples.add(signed / 32768.0);
     }
 
     return samples;
+  }
+
+  /// Find the start of the "data" chunk in a WAV file
+  /// Returns the byte offset of the audio data, or -1 if not found
+  int _findDataChunk(Uint8List wavData) {
+    // Search for "data" marker (0x64617461 in little-endian)
+    for (int i = 0; i < wavData.length - 8; i++) {
+      if (wavData[i] == 0x64 &&      // 'd'
+          wavData[i + 1] == 0x61 &&  // 'a'
+          wavData[i + 2] == 0x74 &&  // 't'
+          wavData[i + 3] == 0x61) {  // 'a'
+        // Found "data" marker, skip marker (4 bytes) and size field (4 bytes)
+        return i + 8;
+      }
+    }
+    return -1; // Not found
   }
 
   /// Get next power of 2 for FFT efficiency
