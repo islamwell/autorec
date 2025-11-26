@@ -10,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../models/keyword_profile.dart';
 import 'keyword_detection_service.dart';
 import '../audio/audio_quality_analyzer.dart';
+import '../audio_features/mfcc_extractor.dart';
 
 /// Implementation of KeywordDetectionService with pattern matching and speech detection
 ///
@@ -75,7 +76,6 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
   // ML-based feature extraction
   late final MfccExtractor _mfccExtractor;
   List<List<double>>? _keywordMfccFeatures; // 2D MFCC feature matrix
-  static const double _patternMatchThreshold = 0.8;
 
   // Counter for logging frequency
   int _checkCount = 0;
@@ -471,16 +471,17 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
 
       // Read the WAV file and extract audio samples
       final wavData = await chunkFile.readAsBytes();
-      final audioSamples = _mfccExtractor.extractFromWav(wavData);
 
-      if (audioSamples.isEmpty) {
+      // Parse WAV data to get raw audio samples
+      final samples = _parseChunkToSamples(wavData);
+
+      if (samples.isEmpty) {
         if (kDebugMode) debugPrint('⚠️  [KW-CHUNK] No audio samples extracted');
         await _cleanupChunkFile(chunkPath);
         return;
       }
 
-      // Extract samples and add to rolling buffer
-      final samples = _parseChunkToSamples(wavData);
+      // Add samples to rolling buffer
       _addSamplesToBuffer(samples);
 
       // Perform keyword detection if we have enough data
@@ -506,19 +507,19 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
     final audioData = wavData.sublist(headerSize);
     final samples = <double>[];
 
-    // Analyze audio quality for speech detection
-    final audioQuality = _audioAnalyzer.analyzeLevel(normalizedLevel);
+    // Parse 16-bit PCM samples (little-endian)
+    for (int i = 0; i < audioData.length - 1; i += 2) {
+      final byte1 = audioData[i];
+      final byte2 = audioData[i + 1];
 
-    // Track consecutive non-speech periods
-    if (!audioQuality.isSpeechDetected) {
-      _consecutiveNonSpeechChecks++;
-    } else {
-      _consecutiveNonSpeechChecks = 0;
-    }
+      // Combine bytes (little-endian: least significant byte first)
+      final sample = byte1 | (byte2 << 8);
 
-    // Log every 50th sample to avoid spam
-    if (_audioBuffer.length % 50 == 0 && kDebugMode) {
-      debugPrint('🎤 [KW-DETECT] Audio: dB=$decibels, normalized=$normalizedLevel, buffer=${_audioBuffer.length}, speech=${audioQuality.isSpeechDetected}');
+      // Convert from unsigned to signed 16-bit
+      final signed = sample > 32767 ? sample - 65536 : sample;
+
+      // Normalize to -1.0 to 1.0
+      samples.add(signed / 32768.0);
     }
 
     return samples;
@@ -568,44 +569,57 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
       return;
     }
 
-    // CRITICAL FIX: Check if speech is currently detected
-    // This prevents false triggers from background noise
-    final currentQuality = _audioAnalyzer.currentQuality;
-    if (currentQuality == null || !currentQuality.isSpeechDetected) {
-      // Reset confidence when no speech is detected
-      _confidenceController?.add(0.0);
+    try {
+      // Convert Queue to List for processing
+      final bufferList = _audioBuffer.toList();
 
-      // Log every 20 checks to avoid spam
-      _checkCount++;
-      if (_checkCount % 20 == 0 && kDebugMode) {
-        debugPrint('🔇 [KW-DETECT] No speech detected - skipping pattern matching');
+      // Calculate average energy to detect speech
+      double totalEnergy = 0.0;
+      for (final sample in bufferList) {
+        totalEnergy += sample * sample;
       }
-      return;
-    }
+      final avgEnergy = sqrt(totalEnergy / bufferList.length);
+      final normalizedLevel = (avgEnergy * 100).clamp(0.0, 100.0);
 
-    // Only proceed with pattern matching if speech is consistently detected
-    if (_consecutiveNonSpeechChecks > _maxConsecutiveNonSpeech) {
-      // Clear buffer if we had a long period of no speech
-      _audioBuffer.clear();
-      _consecutiveNonSpeechChecks = 0;
-      return;
-    }
+      // Analyze audio quality for speech detection
+      final audioQuality = _audioAnalyzer.analyzeLevel(normalizedLevel);
 
-    // Get the most recent audio segment matching keyword length
-    final segmentLength = _keywordPattern!.length;
-    final recentSegment = _audioBuffer.sublist(
-      _audioBuffer.length - segmentLength,
-      _audioBuffer.length,
-    );
+      // Track consecutive non-speech periods
+      if (!audioQuality.isSpeechDetected) {
+        _consecutiveNonSpeechChecks++;
+      } else {
+        _consecutiveNonSpeechChecks = 0;
+      }
+
+      // CRITICAL FIX: Check if speech is currently detected
+      // This prevents false triggers from background noise
+      if (!audioQuality.isSpeechDetected) {
+        // Reset confidence when no speech is detected
+        _confidenceController?.add(0.0);
+
+        // Log every 20 checks to avoid spam
+        _checkCount++;
+        if (_checkCount % 20 == 0 && kDebugMode) {
+          debugPrint('🔇 [KW-DETECT] No speech detected - skipping pattern matching');
+        }
+        return;
+      }
+
+      // Only proceed with pattern matching if speech is consistently detected
+      if (_consecutiveNonSpeechChecks > _maxConsecutiveNonSpeech) {
+        // Clear buffer if we had a long period of no speech
+        _audioBuffer.clear();
+        _consecutiveNonSpeechChecks = 0;
+        return;
+      }
 
       // Extract MFCC features from the recent audio waveform
-      final recentMfccFeatures = _mfccExtractor.extractFeatures(recentAudio);
+      final recentMfccFeatures = _mfccExtractor.extractFeatures(bufferList);
 
-    // Log confidence every 2 seconds (20 checks at 100ms intervals)
-    _checkCount++;
-    if (_checkCount % 20 == 0 && kDebugMode) {
-      debugPrint('🎯 [KW-DETECT] Speech detected! Confidence: ${(confidence * 100).toStringAsFixed(1)}% (threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%)');
-    }
+      if (recentMfccFeatures.isEmpty) {
+        if (kDebugMode) debugPrint('⚠️ [ML-DETECT] Failed to extract MFCC features');
+        return;
+      }
 
       // Calculate similarity using DTW on MFCC features
       final confidence = _mfccExtractor.computeSimilarity(
@@ -613,20 +627,14 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
         _keywordMfccFeatures!,
       );
 
-    // Check if confidence exceeds threshold
-    if (confidence >= _confidenceThreshold) {
-      if (kDebugMode) {
-        debugPrint('');
-        debugPrint('🎉🎉🎉 [KW-DETECT] KEYWORD DETECTED! 🎉🎉🎉');
-        debugPrint('🎯 [KW-DETECT] Confidence: ${(confidence * 100).toStringAsFixed(1)}%');
-        debugPrint('🎯 [KW-DETECT] Threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%');
-        debugPrint('🎯 [KW-DETECT] Audio Quality: ${currentQuality.quality}');
-        debugPrint('🎯 [KW-DETECT] SNR: ${currentQuality.signalToNoiseRatio.toStringAsFixed(1)} dB');
-        debugPrint('');
-      }
-
       // Emit confidence level
       _confidenceController?.add(confidence);
+
+      // Log confidence every 2 seconds (20 checks at 100ms intervals)
+      _checkCount++;
+      if (_checkCount % 20 == 0 && kDebugMode) {
+        debugPrint('🎯 [ML-DETECT] Speech detected! Confidence: ${(confidence * 100).toStringAsFixed(1)}% (threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%)');
+      }
 
       // Check if confidence exceeds threshold
       if (confidence >= _confidenceThreshold) {
@@ -636,6 +644,8 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
           debugPrint('🧠 [ML-DETECT] MFCC Confidence: ${(confidence * 100).toStringAsFixed(1)}%');
           debugPrint('🎯 [ML-DETECT] Threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%');
           debugPrint('📊 [ML-DETECT] Buffer size: ${_audioBuffer.length} samples');
+          debugPrint('🎯 [ML-DETECT] Audio Quality: ${audioQuality.quality}');
+          debugPrint('🎯 [ML-DETECT] SNR: ${audioQuality.signalToNoiseRatio.toStringAsFixed(1)} dB');
           debugPrint('');
         }
 
@@ -653,155 +663,6 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
       if (kDebugMode) debugPrint('❌ [ML-DETECT] Error in MFCC matching: $e');
       _confidenceController?.add(0.0); // Signal error
     }
-  }
-
-  /// Calculate similarity between two audio patterns using multiple comparison methods
-  /// Returns the maximum confidence from different comparison techniques
-  double _calculateSimilarity(List<double> segment1, List<double> segment2) {
-    if (segment1.length != segment2.length) {
-      return 0.0;
-    }
-
-    // Use multiple comparison methods and take the maximum
-    // This makes keyword detection more robust
-    final correlationScore = _normalizedCrossCorrelation(segment1, segment2);
-    final energyScore = _energyBasedSimilarity(segment1, segment2);
-    final shapeScore = _shapeMatchingSimilarity(segment1, segment2);
-    final dtwScore = _simpleDTWSimilarity(segment1, segment2);
-
-    // Take weighted average of all scores
-    final combinedScore = (
-      correlationScore * 0.25 +
-      energyScore * 0.25 +
-      shapeScore * 0.25 +
-      dtwScore * 0.25
-    );
-
-    if (kDebugMode && _checkCount % 100 == 0) {
-      debugPrint('📊 [KW-DETECT] Scores: corr=${(correlationScore*100).toStringAsFixed(1)}% energy=${(energyScore*100).toStringAsFixed(1)}% shape=${(shapeScore*100).toStringAsFixed(1)}% dtw=${(dtwScore*100).toStringAsFixed(1)}% combined=${(combinedScore*100).toStringAsFixed(1)}%');
-    }
-
-    return combinedScore;
-  }
-
-  /// Normalized cross-correlation (original method)
-  double _normalizedCrossCorrelation(List<double> segment1, List<double> segment2) {
-    final mean1 = segment1.reduce((a, b) => a + b) / segment1.length;
-    final mean2 = segment2.reduce((a, b) => a + b) / segment2.length;
-
-    double numerator = 0.0;
-    double denominator1 = 0.0;
-    double denominator2 = 0.0;
-
-    for (int i = 0; i < segment1.length; i++) {
-      final diff1 = segment1[i] - mean1;
-      final diff2 = segment2[i] - mean2;
-
-      numerator += diff1 * diff2;
-      denominator1 += diff1 * diff1;
-      denominator2 += diff2 * diff2;
-    }
-
-    final denominator = sqrt(denominator1 * denominator2);
-    if (denominator == 0.0) return 0.0;
-
-    return (numerator / denominator).abs();
-  }
-
-  /// Energy-based similarity - compares overall energy patterns
-  double _energyBasedSimilarity(List<double> segment1, List<double> segment2) {
-    final energy1 = sqrt(segment1.map((v) => v * v).reduce((a, b) => a + b));
-    final energy2 = sqrt(segment2.map((v) => v * v).reduce((a, b) => a + b));
-
-    if (energy1 == 0.0 || energy2 == 0.0) return 0.0;
-
-    // Similarity is higher when energies are similar
-    final energyRatio = min(energy1, energy2) / max(energy1, energy2);
-
-    // Also compare energy distribution
-    final normalized1 = segment1.map((v) => v / energy1).toList();
-    final normalized2 = segment2.map((v) => v / energy2).toList();
-
-    double sumDiff = 0.0;
-    for (int i = 0; i < normalized1.length; i++) {
-      sumDiff += (normalized1[i] - normalized2[i]).abs();
-    }
-
-    final distributionScore = 1.0 - (sumDiff / normalized1.length).clamp(0.0, 1.0);
-
-    return (energyRatio + distributionScore) / 2.0;
-  }
-
-  /// Shape matching - compares the overall shape/envelope of the patterns
-  double _shapeMatchingSimilarity(List<double> segment1, List<double> segment2) {
-    // Compare peaks, valleys, and general shape
-    final peaks1 = _findPeaks(segment1);
-    final peaks2 = _findPeaks(segment2);
-
-    // If peak counts are vastly different, lower score
-    final peakCountSimilarity = peaks1.length == 0 || peaks2.length == 0
-        ? 0.5
-        : min(peaks1.length, peaks2.length) / max(peaks1.length, peaks2.length);
-
-    // Compare slope patterns
-    double slopeScore = 0.0;
-    for (int i = 1; i < segment1.length; i++) {
-      final slope1 = segment1[i] - segment1[i - 1];
-      final slope2 = segment2[i] - segment2[i - 1];
-
-      // Reward similar slope directions
-      if (slope1 > 0 && slope2 > 0 || slope1 < 0 && slope2 < 0) {
-        slopeScore += 1.0;
-      }
-    }
-    slopeScore /= (segment1.length - 1);
-
-    return (peakCountSimilarity + slopeScore) / 2.0;
-  }
-
-  /// Simplified DTW (Dynamic Time Warping) - allows for slight time shifts
-  double _simpleDTWSimilarity(List<double> segment1, List<double> segment2) {
-    // For performance, use a simplified DTW with limited window
-    const int windowSize = 5;
-
-    double totalDistance = 0.0;
-    int matchCount = 0;
-
-    for (int i = 0; i < segment1.length; i++) {
-      // Look for best match within a small window
-      final start = max(0, i - windowSize);
-      final end = min(segment2.length - 1, i + windowSize);
-
-      double minDist = double.infinity;
-      for (int j = start; j <= end; j++) {
-        final dist = (segment1[i] - segment2[j]).abs();
-        minDist = min(minDist, dist);
-      }
-
-      totalDistance += minDist;
-      matchCount++;
-    }
-
-    final avgDistance = totalDistance / matchCount;
-
-    // Convert distance to similarity (lower distance = higher similarity)
-    return 1.0 - avgDistance.clamp(0.0, 1.0);
-  }
-
-  /// Find peaks in a signal
-  List<int> _findPeaks(List<double> signal) {
-    final peaks = <int>[];
-
-    for (int i = 1; i < signal.length - 1; i++) {
-      if (signal[i] > signal[i - 1] && signal[i] > signal[i + 1]) {
-        // This is a peak
-        if (signal[i] > 0.3) { // Only count significant peaks
-          peaks.add(i);
-        }
-      }
-    }
-
-    return peaks;
   }
 
   /// Configure audio settings for background mode with power optimization
@@ -823,18 +684,18 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
         _listeningTimer?.cancel();
         _listeningTimer = Timer.periodic(
           const Duration(milliseconds: 500), // Less frequent pattern matching
-          (_) => _performPatternMatching(),
+          (_) => _performPatternMatchingOnBuffer(),
         );
       } else {
         // Standard background mode settings
         await _recorder!.setSubscriptionDuration(
           const Duration(milliseconds: 100), // Moderate update frequency
         );
-        
+
         _listeningTimer?.cancel();
         _listeningTimer = Timer.periodic(
           const Duration(milliseconds: 200),
-          (_) => _performPatternMatching(),
+          (_) => _performPatternMatchingOnBuffer(),
         );
       }
 
@@ -860,7 +721,7 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
       _listeningTimer?.cancel();
       _listeningTimer = Timer.periodic(
         const Duration(milliseconds: 100),
-        (_) => _performPatternMatching(),
+        (_) => _performPatternMatchingOnBuffer(),
       );
 
     } catch (e) {
@@ -871,10 +732,9 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
     }
   }
 
-  /// Extract audio pattern from training file (improved implementation)
-  /// This creates a more unique fingerprint based on file content hash
-  /// NOTE: This is still a simplified approach. For production, use MFCC features or ML models.
-  Future<List<double>> _extractAudioPattern(String audioPath) async {
+  /// Extract MFCC features from training file
+  /// Returns 2D MFCC feature matrix for keyword matching
+  Future<List<List<double>>> _extractAudioPattern(String audioPath) async {
     try {
       if (kDebugMode) debugPrint('🧠 [ML-EXTRACT] Extracting MFCC features from audio...');
 
@@ -883,67 +743,23 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
         throw KeywordDetectionException('Audio file not found: $audioPath');
       }
 
-      // Read actual file bytes to create unique pattern
+      // Read WAV file bytes
       final fileBytes = await audioFile.readAsBytes();
-      final fileSize = fileBytes.length;
 
       if (kDebugMode) {
-        debugPrint('📊 [PATTERN] Extracting pattern from ${fileBytes.length} bytes');
+        debugPrint('📊 [ML-EXTRACT] Processing ${fileBytes.length} bytes');
       }
 
-      // Estimate duration based on file size
-      final estimatedDurationMs = _estimateAudioDuration(fileSize, audioPath);
+      // Extract MFCC features using the MFCC extractor
+      final mfccFeatures = _mfccExtractor.extractFromWav(fileBytes);
 
-      // Create pattern length proportional to duration
-      // Typical keywords are 0.5-2 seconds
-      final patternLength = (estimatedDurationMs / 10).clamp(50, 200).toInt();
-
-      // IMPROVED: Generate pattern based on actual file content
-      // This creates a more unique signature for each recording
-      final pattern = <double>[];
-
-      // Sample the file bytes to create acoustic fingerprint
-      // We'll sample evenly across the file to capture temporal characteristics
-      final sampleInterval = max(1, fileBytes.length ~/ patternLength);
-
-      for (int i = 0; i < patternLength; i++) {
-        // Get sample position in file
-        final bytePos = min((i * sampleInterval), fileBytes.length - 4);
-
-        // Read 4 bytes and combine them into a pattern value
-        // This captures actual file content, making each pattern unique
-        int value = 0;
-        for (int j = 0; j < 4 && (bytePos + j) < fileBytes.length; j++) {
-          value = (value << 8) | fileBytes[bytePos + j];
-        }
-
-        // Normalize to 0.0-1.0 range
-        final normalized = (value.abs() % 1000) / 1000.0;
-
-        // Apply temporal weighting to emphasize middle sections
-        // Speech has characteristic attack-sustain-decay envelope
-        final position = i / patternLength;
-        double temporalWeight = 1.0;
-
-        if (position < 0.1) {
-          // Attack phase - rising weight
-          temporalWeight = position / 0.1;
-        } else if (position > 0.85) {
-          // Decay phase - falling weight
-          temporalWeight = (1.0 - position) / 0.15;
-        }
-
-        // Combine content-based value with temporal weighting
-        final weightedValue = (normalized * 0.7 + temporalWeight * 0.3).clamp(0.0, 1.0);
-        pattern.add(weightedValue);
+      if (mfccFeatures.isEmpty) {
+        throw KeywordDetectionException('Failed to extract MFCC features from audio file');
       }
 
       if (kDebugMode) {
-        // Calculate pattern statistics for debugging
-        final avgValue = pattern.reduce((a, b) => a + b) / pattern.length;
-        final maxValue = pattern.reduce((a, b) => a > b ? a : b);
-        final minValue = pattern.reduce((a, b) => a < b ? a : b);
-        debugPrint('📊 [PATTERN] Generated pattern: length=$patternLength, avg=${avgValue.toStringAsFixed(3)}, min=${minValue.toStringAsFixed(3)}, max=${maxValue.toStringAsFixed(3)}');
+        debugPrint('✅ [ML-EXTRACT] Extracted ${mfccFeatures.length} MFCC frames');
+        debugPrint('📊 [ML-EXTRACT] Coefficients per frame: ${mfccFeatures[0].length}');
       }
 
       return mfccFeatures;
@@ -952,22 +768,6 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
         'Failed to extract MFCC features: ${e.toString()}',
         e,
       );
-    }
-  }
-
-  /// Estimate audio duration from file size and extension
-  int _estimateAudioDuration(int fileSize, String filePath) {
-    final extension = filePath.toLowerCase().split('.').last;
-
-    if (extension == 'wav') {
-      // WAV is uncompressed: ~32KB per second for 16kHz mono
-      return (fileSize / 32000 * 1000).toInt();
-    } else if (extension == 'm4a' || extension == 'aac' || extension == 'mp4') {
-      // AAC is compressed: ~2KB per second at 64kbps
-      return (fileSize / 2000 * 1000).toInt();
-    } else {
-      // Default assumption
-      return (fileSize / 8000 * 1000).toInt();
     }
   }
 }
