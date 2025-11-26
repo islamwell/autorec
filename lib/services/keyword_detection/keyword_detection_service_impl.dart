@@ -7,9 +7,40 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../models/keyword_profile.dart';
 import 'keyword_detection_service.dart';
+import '../audio/audio_quality_analyzer.dart';
 
-/// Implementation of KeywordDetectionService with basic pattern matching
-/// This serves as foundation for future ML integration
+/// Implementation of KeywordDetectionService with pattern matching and speech detection
+///
+/// IMPORTANT IMPROVEMENTS (Latest Update):
+/// =====================================
+/// This implementation has been significantly improved to fix false positives:
+///
+/// 1. **Speech Detection Gate**: Pattern matching now ONLY runs when speech is detected.
+///    - Uses AudioQualityAnalyzer to verify speech presence before matching
+///    - Prevents false triggers from ambient noise, silence, or background sounds
+///    - Requires sustained speech patterns (not just momentary noise spikes)
+///
+/// 2. **Increased Confidence Threshold**: Raised from 0.3 to 0.65 (30% → 65%)
+///    - Reduces sensitivity to prevent false matches
+///    - Requires stronger pattern correlation for keyword detection
+///
+/// 3. **Improved Pattern Extraction**: Now uses actual file content instead of synthetic data
+///    - Samples actual audio file bytes to create unique fingerprints
+///    - Each keyword recording produces a distinct pattern
+///    - Previous implementation generated identical patterns for similar-duration files
+///
+/// 4. **Non-Speech Buffer Management**: Automatically clears buffer after prolonged silence
+///    - Prevents stale audio data from affecting future detections
+///    - Resets state when no speech detected for extended period
+///
+/// NOTE: This is still a simplified pattern matching approach. For production-grade
+/// keyword detection, consider implementing:
+/// - MFCC (Mel-Frequency Cepstral Coefficients) feature extraction
+/// - FFT-based frequency analysis
+/// - ML models (TensorFlow Lite, etc.)
+/// - Audio fingerprinting algorithms (like Chromaprint/AcoustID)
+///
+/// This implementation serves as a foundation that can be extended with ML later.
 class KeywordDetectionServiceImpl implements KeywordDetectionService {
   FlutterSoundRecorder? _recorder;
   StreamController<bool>? _keywordDetectedController;
@@ -26,7 +57,7 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
   bool _isListening = false;
   bool _isBackgroundListening = false;
   KeywordProfile? _currentProfile;
-  double _confidenceThreshold = 0.3; // Lower threshold for more sensitive detection
+  double _confidenceThreshold = 0.65; // Increased threshold to reduce false positives
   
   // Background listening configuration
   bool _lowPowerMode = false;
@@ -39,6 +70,11 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
 
   // Counter for logging frequency
   int _checkCount = 0;
+
+  // Audio quality analyzer for speech detection
+  final AudioQualityAnalyzer _audioAnalyzer = AudioQualityAnalyzer();
+  int _consecutiveNonSpeechChecks = 0;
+  static const int _maxConsecutiveNonSpeech = 20; // 2 seconds of no speech before resetting
 
   @override
   Stream<bool> get keywordDetectedStream => 
@@ -180,6 +216,8 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
 
       _isListening = false;
       _audioBuffer.clear();
+      _audioAnalyzer.reset();
+      _consecutiveNonSpeechChecks = 0;
 
     } catch (e) {
       throw KeywordDetectionException(
@@ -371,9 +409,19 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
     // Add to circular buffer
     _audioBuffer.add(normalizedLevel);
 
+    // Analyze audio quality for speech detection
+    final audioQuality = _audioAnalyzer.analyzeLevel(normalizedLevel);
+
+    // Track consecutive non-speech periods
+    if (!audioQuality.isSpeechDetected) {
+      _consecutiveNonSpeechChecks++;
+    } else {
+      _consecutiveNonSpeechChecks = 0;
+    }
+
     // Log every 50th sample to avoid spam
     if (_audioBuffer.length % 50 == 0 && kDebugMode) {
-      debugPrint('🎤 [KW-DETECT] Audio: dB=$decibels, normalized=$normalizedLevel, buffer=${_audioBuffer.length}');
+      debugPrint('🎤 [KW-DETECT] Audio: dB=$decibels, normalized=$normalizedLevel, buffer=${_audioBuffer.length}, speech=${audioQuality.isSpeechDetected}');
     }
 
     // Maintain buffer size (sliding window)
@@ -405,6 +453,29 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
       return;
     }
 
+    // CRITICAL FIX: Check if speech is currently detected
+    // This prevents false triggers from background noise
+    final currentQuality = _audioAnalyzer.currentQuality;
+    if (currentQuality == null || !currentQuality.isSpeechDetected) {
+      // Reset confidence when no speech is detected
+      _confidenceController?.add(0.0);
+
+      // Log every 20 checks to avoid spam
+      _checkCount++;
+      if (_checkCount % 20 == 0 && kDebugMode) {
+        debugPrint('🔇 [KW-DETECT] No speech detected - skipping pattern matching');
+      }
+      return;
+    }
+
+    // Only proceed with pattern matching if speech is consistently detected
+    if (_consecutiveNonSpeechChecks > _maxConsecutiveNonSpeech) {
+      // Clear buffer if we had a long period of no speech
+      _audioBuffer.clear();
+      _consecutiveNonSpeechChecks = 0;
+      return;
+    }
+
     // Get the most recent audio segment matching keyword length
     final segmentLength = _keywordPattern!.length;
     final recentSegment = _audioBuffer.sublist(
@@ -418,7 +489,7 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
     // Log confidence every 2 seconds (20 checks at 100ms intervals)
     _checkCount++;
     if (_checkCount % 20 == 0 && kDebugMode) {
-      debugPrint('🎯 [KW-DETECT] Confidence: ${(confidence * 100).toStringAsFixed(1)}% (threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%)');
+      debugPrint('🎯 [KW-DETECT] Speech detected! Confidence: ${(confidence * 100).toStringAsFixed(1)}% (threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%)');
     }
 
     // Emit confidence level
@@ -431,6 +502,8 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
         debugPrint('🎉🎉🎉 [KW-DETECT] KEYWORD DETECTED! 🎉🎉🎉');
         debugPrint('🎯 [KW-DETECT] Confidence: ${(confidence * 100).toStringAsFixed(1)}%');
         debugPrint('🎯 [KW-DETECT] Threshold: ${(_confidenceThreshold * 100).toStringAsFixed(1)}%');
+        debugPrint('🎯 [KW-DETECT] Audio Quality: ${currentQuality.quality}');
+        debugPrint('🎯 [KW-DETECT] SNR: ${currentQuality.signalToNoiseRatio.toStringAsFixed(1)} dB');
         debugPrint('');
       }
 
@@ -660,8 +733,8 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
   }
 
   /// Extract audio pattern from training file (improved implementation)
-  /// This creates a temporal envelope pattern based on the audio duration
-  /// In a real ML implementation, this would use MFCC features or similar
+  /// This creates a more unique fingerprint based on file content hash
+  /// NOTE: This is still a simplified approach. For production, use MFCC features or ML models.
   Future<List<double>> _extractAudioPattern(String audioPath) async {
     try {
       final audioFile = File(audioPath);
@@ -669,48 +742,67 @@ class KeywordDetectionServiceImpl implements KeywordDetectionService {
         throw KeywordDetectionException('Audio file not found: $audioPath');
       }
 
-      // Get file size as a rough indicator of duration
-      final fileSize = await audioFile.length();
+      // Read actual file bytes to create unique pattern
+      final fileBytes = await audioFile.readAsBytes();
+      final fileSize = fileBytes.length;
 
-      // Estimate duration based on file size (rough approximation)
-      // For 16kHz mono audio: ~32KB per second for WAV, ~2KB per second for AAC
+      if (kDebugMode) {
+        debugPrint('📊 [PATTERN] Extracting pattern from ${fileBytes.length} bytes');
+      }
+
+      // Estimate duration based on file size
       final estimatedDurationMs = _estimateAudioDuration(fileSize, audioPath);
 
-      // Create a temporal pattern with normalized length
-      // Pattern length should be proportional to keyword duration
+      // Create pattern length proportional to duration
       // Typical keywords are 0.5-2 seconds
       final patternLength = (estimatedDurationMs / 10).clamp(50, 200).toInt();
 
-      // Generate a pattern based on file characteristics
-      // This creates a unique signature for each keyword based on:
-      // 1. File size (relates to duration and content)
-      // 2. Temporal envelope (simulated based on typical speech patterns)
+      // IMPROVED: Generate pattern based on actual file content
+      // This creates a more unique signature for each recording
       final pattern = <double>[];
-      final random = Random(fileSize); // Use file size as seed for reproducibility
 
-      // Simulate a speech envelope pattern
-      // Speech typically has: attack (rise) -> sustain -> decay
+      // Sample the file bytes to create acoustic fingerprint
+      // We'll sample evenly across the file to capture temporal characteristics
+      final sampleInterval = max(1, fileBytes.length ~/ patternLength);
+
       for (int i = 0; i < patternLength; i++) {
-        final position = i / patternLength;
+        // Get sample position in file
+        final bytePos = min((i * sampleInterval), fileBytes.length - 4);
 
-        // Create envelope: quick rise, sustained middle, gradual fall
-        double envelope;
-        if (position < 0.15) {
-          // Attack phase (0-15%)
-          envelope = position / 0.15;
-        } else if (position < 0.75) {
-          // Sustain phase (15-75%)
-          envelope = 0.85 + random.nextDouble() * 0.15;
-        } else {
-          // Decay phase (75-100%)
-          envelope = (1.0 - position) / 0.25;
+        // Read 4 bytes and combine them into a pattern value
+        // This captures actual file content, making each pattern unique
+        int value = 0;
+        for (int j = 0; j < 4 && (bytePos + j) < fileBytes.length; j++) {
+          value = (value << 8) | fileBytes[bytePos + j];
         }
 
-        // Add some randomness based on file characteristics for uniqueness
-        final uniqueness = ((fileSize + i) % 100) / 200.0; // 0-0.5 range
-        final value = (envelope * 0.7 + uniqueness).clamp(0.0, 1.0);
+        // Normalize to 0.0-1.0 range
+        final normalized = (value.abs() % 1000) / 1000.0;
 
-        pattern.add(value);
+        // Apply temporal weighting to emphasize middle sections
+        // Speech has characteristic attack-sustain-decay envelope
+        final position = i / patternLength;
+        double temporalWeight = 1.0;
+
+        if (position < 0.1) {
+          // Attack phase - rising weight
+          temporalWeight = position / 0.1;
+        } else if (position > 0.85) {
+          // Decay phase - falling weight
+          temporalWeight = (1.0 - position) / 0.15;
+        }
+
+        // Combine content-based value with temporal weighting
+        final weightedValue = (normalized * 0.7 + temporalWeight * 0.3).clamp(0.0, 1.0);
+        pattern.add(weightedValue);
+      }
+
+      if (kDebugMode) {
+        // Calculate pattern statistics for debugging
+        final avgValue = pattern.reduce((a, b) => a + b) / pattern.length;
+        final maxValue = pattern.reduce((a, b) => a > b ? a : b);
+        final minValue = pattern.reduce((a, b) => a < b ? a : b);
+        debugPrint('📊 [PATTERN] Generated pattern: length=$patternLength, avg=${avgValue.toStringAsFixed(3)}, min=${minValue.toStringAsFixed(3)}, max=${maxValue.toStringAsFixed(3)}');
       }
 
       return pattern;

@@ -45,7 +45,7 @@ class SimpleHomeScreen extends ConsumerWidget {
 
               // Subtitle
               Text(
-                'Record a keyword, then auto-record when it\'s detected',
+                'Auto-record when keywords detected or record manually',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: theme.colorScheme.onSurface.withOpacity(0.7),
                 ),
@@ -157,13 +157,19 @@ class SimpleHomeScreen extends ConsumerWidget {
 
               const SizedBox(height: 16),
 
-              // Manual Recording Button (for testing)
+              // Manual Recording Button - More prominent UI
               _buildActionButton(
                 context: context,
                 theme: theme,
-                label: recorderState.isAutoRecording ? 'Stop Recording' : 'Manual Recording (Test)',
-                icon: recorderState.isAutoRecording ? Icons.stop : Icons.radio_button_checked,
-                color: theme.colorScheme.error,
+                label: recorderState.isAutoRecording
+                    ? 'Stop Manual Recording'
+                    : 'Manual Recording',
+                icon: recorderState.isAutoRecording
+                    ? Icons.stop_circle
+                    : Icons.fiber_manual_record,
+                color: recorderState.isAutoRecording
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.tertiary,
                 onPressed: () async {
                   if (!hasPermission) {
                     final granted = await requestPermission();
@@ -181,6 +187,20 @@ class SimpleHomeScreen extends ConsumerWidget {
                   if (recorderState.isAutoRecording) {
                     // Stop recording manually
                     recorderNotifier.stopManualRecording();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text('Manual recording saved successfully'),
+                          backgroundColor: theme.colorScheme.primary,
+                          action: SnackBarAction(
+                            label: 'View',
+                            onPressed: () {
+                              Navigator.pushNamed(context, '/recordings');
+                            },
+                          ),
+                        ),
+                      );
+                    }
                   } else {
                     // Start manual recording
                     recorderNotifier.startManualRecording();
